@@ -4,6 +4,7 @@ import { listAlertCandidates } from "@/server/data/licenses";
 import { getOrgSettings } from "@/server/data/organizationSettings";
 import { listContactsByOrg } from "@/server/data/contacts";
 import { hasAlertBeenSent, recordAlert } from "@/server/data/alertLog";
+import { isUniqueViolation } from "@/server/data/errors";
 import { startJobRun, finishJobRun, DAILY_CHECK } from "@/server/data/admin/jobRuns";
 import { daysRemaining } from "@/server/domain/thresholds";
 import { matchesProductFilter, selectThreshold, dedupKey, buildRecipients } from "@/server/domain/alertLogic";
@@ -100,7 +101,23 @@ async function runDailyCheckInternal(
 
   for (const orgId of orgIds) {
     stats.orgsProcessed++;
+    // One tenant's failure must never abort the rest of the run. A transient
+    // DB error reading this org's settings/candidates, or any other throw
+    // inside the block, is recorded against this org and the loop moves on —
+    // otherwise a single bad org silently costs every tenant after it in the
+    // list their alerts for the day (and the run reads as one error, not N).
+    try {
+      await processOrg(orgId, now, stats);
+    } catch (err) {
+      stats.errors++;
+      recordError(stats, `Org ${orgId}: run failed — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
+  return stats;
+}
+
+async function processOrg(orgId: string, now: Date, stats: DailyCheckStats): Promise<void> {
     const [settings, candidates, contacts] = await Promise.all([
       getOrgSettings(orgId),
       listAlertCandidates(orgId),
@@ -176,11 +193,20 @@ async function runDailyCheckInternal(
 
       const result = await sendEmail({ to: recipients, subject: email.subject, text: email.text, html: email.html });
 
-      if (result.ok) {
-        seenInRun.add(key);
-        // Send first, log second (D7 / docs/01 §3.2) — a crash between the
-        // two produces a duplicate email on the next run rather than a
-        // silently missed expiry. Never invert this.
+      if (!result.ok) {
+        stats.errors++;
+        recordError(stats,
+          `${lic.customerName} / ${lic.productName} -> ${recipients.join(", ")}: ${result.error ?? "send failed"}`);
+        continue;
+      }
+
+      seenInRun.add(key);
+      stats.sent++;
+
+      // Send first, log second (D7 / docs/01 §3.2) — a crash between the two
+      // produces a duplicate email on the next run rather than a silently
+      // missed expiry. Never invert this.
+      try {
         await recordAlert({
           organizationId: orgId,
           licenseId: lic.id,
@@ -189,16 +215,21 @@ async function runDailyCheckInternal(
           recipients,
           providerMessageId: result.providerMessageId,
         });
-        stats.sent++;
-      } else {
-        stats.errors++;
-        recordError(stats,
-          `${lic.customerName} / ${lic.productName} -> ${recipients.join(", ")}: ${result.error ?? "send failed"}`);
+      } catch (err) {
+        // A concurrent run — the scheduled cron overlapping a manual "Run
+        // check now", or a Vercel retry of a timed-out invocation — can send
+        // the same alert and win the race to the uq_alert_dedup row. The email
+        // has already gone out (counted above), so losing that race is the
+        // expected, benign outcome, not a run failure: swallow it. Any other
+        // write failure is real — the alert was sent but not recorded, so the
+        // next run will resend it — and must be surfaced.
+        if (!isUniqueViolation(err, "uq_alert_dedup")) {
+          stats.errors++;
+          recordError(stats,
+            `${lic.customerName} / ${lic.productName}: alert sent but not logged — ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
     }
-  }
-
-  return stats;
 }
 
 function recordError(stats: DailyCheckStats, message: string) {
