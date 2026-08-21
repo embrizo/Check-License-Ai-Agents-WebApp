@@ -3,18 +3,8 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { getUserByEmail, recordLogin } from "@/server/data/users";
-import type { UserRole } from "@/db/schema";
+import { authConfigEdge } from "./config.edge";
 import "./types";
-
-// See ./jwt.d.ts — the JWT augmentation doesn't merge into the type
-// NextAuthConfig actually uses for `token`, so it types as `{}`. Cast
-// explicitly here rather than depend on it.
-interface AppJWT {
-  sub?: string;
-  role?: UserRole;
-  organizationId?: string | null;
-  mustChangePassword?: boolean;
-}
 
 const LoginInput = z.object({
   email: z.email().toLowerCase(),
@@ -26,10 +16,14 @@ const LoginInput = z.object({
 // which addresses are registered.
 const DUMMY_HASH = "$2b$12$9ix8c7ngGuoxLFN.sLCW5ea1yicKNVCRs2DRdc9wdf7n.006938Yq";
 
+/**
+ * The full config: the Edge-safe base (session, pages, callbacks — see
+ * ./config.edge.ts) plus the Credentials provider, which pulls in bcrypt and the
+ * database and so must never reach the middleware bundle. Used by the API route
+ * (app/api/auth/[...nextauth]) and server-side auth()/signIn()/signOut() only.
+ */
 export const authConfig: NextAuthConfig = {
-  session: { strategy: "jwt", maxAge: 60 * 60 * 8 },   // 8h — a workday
-  pages: { signIn: "/login" },
-  trustHost: true,
+  ...authConfigEdge,
   providers: [
     Credentials({
       credentials: { email: {}, password: {} },
@@ -57,23 +51,4 @@ export const authConfig: NextAuthConfig = {
       },
     }),
   ],
-  callbacks: {
-    async jwt({ token, user }) {
-      const t = token as AppJWT;
-      if (user) {
-        t.role = user.role;
-        t.organizationId = user.organizationId;
-        t.mustChangePassword = user.mustChangePassword;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      const t = token as AppJWT;
-      session.user.id = t.sub!;
-      session.user.role = t.role!;
-      session.user.organizationId = t.organizationId ?? null;
-      session.user.mustChangePassword = t.mustChangePassword ?? false;
-      return session;
-    },
-  },
 };
