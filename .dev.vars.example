@@ -1,0 +1,17 @@
+# Local env for `opennextjs-cloudflare preview` (workerd), NOT for `next dev`.
+# `next dev` keeps using .env.local. Copy this to `.dev.vars` and fill in real
+# values to test the full app on the Cloudflare runtime before deploying.
+# `.dev.vars` is gitignored; in production these are `wrangler secret put`.
+
+DATABASE_URL="postgresql://...neon-prod-or-dev..."
+AUTH_SECRET="dev-only-change-me"
+CRON_SECRET="dev-only-change-me"
+
+# Optional in dev — leave empty to skip sends / disable AI, same as .env.local.
+RESEND_API_KEY=""
+GEMINI_API_KEY=""
+HEARTBEAT_URL=""
+OPS_ALERT_EMAIL=""
+
+# Optional: the origin the app is served from during preview.
+# AUTH_URL="http://localhost:8788"
