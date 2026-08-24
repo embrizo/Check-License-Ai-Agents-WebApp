@@ -125,7 +125,7 @@ export default async function LicensesPage({
               <TableHead>{sortLink(params, "expire", "Expires")}</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>{sortLink(params, "seats", "Seats")}</TableHead>
-              <TableHead>Review</TableHead>
+              <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <LicensesTable rows={rows} grouped={grouped} />

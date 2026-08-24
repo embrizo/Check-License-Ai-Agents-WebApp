@@ -197,3 +197,16 @@ export async function rejectAiLicense(orgId: string, licenseId: string) {
   await db.delete(licenses)
     .where(and(eq(licenses.id, licenseId), eq(licenses.organizationId, orgId), eq(licenses.reviewState, "pending_review")));
 }
+
+/**
+ * User-initiated hard delete of a single license, in ANY review state (unlike
+ * rejectAiLicense, which only removes unreviewed AI guesses). Tenant-scoped, so
+ * a wrong-org id simply matches nothing. alert_log rows for this license cascade
+ * away (schema onDelete: "cascade"). Note: this removes the row now, it does not
+ * blacklist the product — re-uploading a file that still contains it recreates it.
+ */
+export async function deleteLicense(orgId: string, licenseId: string) {
+  const db = getDb();
+  await db.delete(licenses)
+    .where(and(eq(licenses.id, licenseId), eq(licenses.organizationId, orgId)));
+}

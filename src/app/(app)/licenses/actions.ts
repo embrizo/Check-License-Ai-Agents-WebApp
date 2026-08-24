@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireOrg } from "@/server/auth/guards";
 import { guardErrorMessage } from "@/server/auth/actionError";
-import { confirmLicense, rejectAiLicense, getLicenseWithCustomer } from "@/server/data/licenses";
+import { confirmLicense, rejectAiLicense, deleteLicense, getLicenseWithCustomer } from "@/server/data/licenses";
 import { getOrgSettings } from "@/server/data/organizationSettings";
 import { getUserById } from "@/server/data/users";
 import { recordAuditLog } from "@/server/data/admin/auditLog";
@@ -48,6 +48,33 @@ export async function rejectLicenseAction(licenseId: string): Promise<ReviewActi
   try {
     const { orgId } = await requireOrg({ write: true });
     await rejectAiLicense(orgId, licenseId);
+  } catch (err) {
+    const message = guardErrorMessage(err);
+    if (message) return { error: message };
+    throw err;
+  }
+
+  revalidateReviewSurfaces();
+  return { ok: true };
+}
+
+/**
+ * User-initiated delete of a license, any review state. Audited — unlike
+ * Confirm/Reject, this can remove a human-confirmed row, so it's worth a record
+ * of who did it. Requires write access (member+, active subscription), matching
+ * upload: anyone who can add licenses can remove them.
+ */
+export async function deleteLicenseAction(licenseId: string): Promise<ReviewActionState> {
+  try {
+    const { orgId, session } = await requireOrg({ write: true });
+    await deleteLicense(orgId, licenseId);
+    await recordAuditLog({
+      organizationId: orgId,
+      userId: session.user.id,
+      action: "license.delete",
+      targetType: "license",
+      targetId: licenseId,
+    });
   } catch (err) {
     const message = guardErrorMessage(err);
     if (message) return { error: message };

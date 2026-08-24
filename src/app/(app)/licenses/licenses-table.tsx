@@ -8,6 +8,7 @@ import { formatSeats } from "@/server/domain/seats";
 import { Badge } from "@/components/ui/badge";
 import { TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { ReviewCell } from "./review-cell";
+import { DeleteLicenseButton } from "./delete-license-button";
 
 export type LicenseRow = {
   id: string;
@@ -52,9 +53,12 @@ function LicenseDetailRow({ r, indent }: { r: LicenseRow; indent: boolean }) {
       <TableCell><Badge variant={badge.variant}>{badge.label}</Badge></TableCell>
       <TableCell>{formatSeats(r.seats)}</TableCell>
       <TableCell>
-        {r.reviewState === "pending_review" && (
-          <ReviewCell licenseId={r.id} confidence={r.confidence} />
-        )}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {r.reviewState === "pending_review" && (
+            <ReviewCell licenseId={r.id} confidence={r.confidence} />
+          )}
+          <DeleteLicenseButton licenseId={r.id} productName={r.productName} />
+        </div>
       </TableCell>
     </TableRow>
   );

@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { ReviewCell } from "../../licenses/review-cell";
 import { RenewalDraftDialog } from "../../licenses/renewal-draft-dialog";
+import { DeleteLicenseButton } from "../../licenses/delete-license-button";
 
 const BUCKET_BADGE: Record<ExpiryBucket, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   expired: { label: "Expired", variant: "destructive" },
@@ -81,7 +82,10 @@ export default async function CustomerDetailPage({
                         )}
                       </TableCell>
                       <TableCell>
-                        <RenewalDraftDialog licenseId={lic.id} defaultTo={defaultRecipients} />
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <RenewalDraftDialog licenseId={lic.id} defaultTo={defaultRecipients} />
+                          <DeleteLicenseButton licenseId={lic.id} productName={lic.productName} />
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
