@@ -6,7 +6,7 @@ import { listContactsByOrg } from "@/server/data/contacts";
 import { hasAlertBeenSent, recordAlert } from "@/server/data/alertLog";
 import { isUniqueViolation } from "@/server/data/errors";
 import { startJobRun, finishJobRun, DAILY_CHECK } from "@/server/data/admin/jobRuns";
-import { daysRemaining } from "@/server/domain/thresholds";
+import { daysRemaining, isSendHour } from "@/server/domain/thresholds";
 import { matchesProductFilter, selectThreshold, dedupKey, buildRecipients } from "@/server/domain/alertLogic";
 import { renderAlertEmail } from "@/server/domain/alertTemplate";
 import { sendEmail } from "@/server/mail/send";
@@ -91,7 +91,7 @@ export async function runDailyCheckTracked(
 }
 
 async function runDailyCheckInternal(
-  _trigger: "cron" | "manual",
+  trigger: "cron" | "manual",
   now: Date = new Date(),
 ): Promise<DailyCheckStats> {
   const stats: DailyCheckStats = {
@@ -99,15 +99,19 @@ async function runDailyCheckInternal(
   };
   const orgIds = await listActiveOrgIds();
 
+  // The cron runs hourly; a scheduled run only sends for orgs whose configured
+  // send hour matches now (in their timezone). A *manual* "Run check now" must
+  // ignore that gate — an admin testing at 3pm still expects it to send.
+  const ignoreSendHour = trigger === "manual";
+
   for (const orgId of orgIds) {
-    stats.orgsProcessed++;
     // One tenant's failure must never abort the rest of the run. A transient
     // DB error reading this org's settings/candidates, or any other throw
     // inside the block, is recorded against this org and the loop moves on —
     // otherwise a single bad org silently costs every tenant after it in the
     // list their alerts for the day (and the run reads as one error, not N).
     try {
-      await processOrg(orgId, now, stats);
+      await processOrg(orgId, now, stats, ignoreSendHour);
     } catch (err) {
       stats.errors++;
       recordError(stats, `Org ${orgId}: run failed — ${err instanceof Error ? err.message : String(err)}`);
@@ -117,14 +121,24 @@ async function runDailyCheckInternal(
   return stats;
 }
 
-async function processOrg(orgId: string, now: Date, stats: DailyCheckStats): Promise<void> {
-    const [settings, candidates, contacts] = await Promise.all([
-      getOrgSettings(orgId),
+async function processOrg(orgId: string, now: Date, stats: DailyCheckStats, ignoreSendHour: boolean): Promise<void> {
+    const settings = await getOrgSettings(orgId);
+    const timezone = settings?.timezone ?? "Asia/Bangkok";
+
+    // Hourly cron checks every active org each run; an org only actually sends
+    // during its own send hour, in its own timezone. Other hours are a
+    // deliberate no-op for it — the run still happened, which is what the
+    // heartbeat/job_runs care about. `orgsProcessed` counts only orgs that were
+    // actually due this run, so the admin panel doesn't read "N processed, 0
+    // sent" every hour.
+    if (!ignoreSendHour && !isSendHour(settings?.alertSendHour ?? 8, timezone, now)) return;
+    stats.orgsProcessed++;
+
+    const [candidates, contacts] = await Promise.all([
       listAlertCandidates(orgId),
       listContactsByOrg(orgId),
     ]);
 
-    const timezone = settings?.timezone ?? "Asia/Bangkok";
     const thresholds = settings?.alertThresholds ?? [30, 15];
     const orgRecipients = settings?.alertRecipients ?? [];
     const productFilterRegex = settings?.productFilterRegex ?? null;

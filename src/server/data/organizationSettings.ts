@@ -16,6 +16,7 @@ export async function upsertOrgSettings(orgId: string, input: Partial<{
   timezone: string;
   notifyCustomerContacts: boolean;
   aiEnabled: boolean;
+  alertSendHour: number;
 }>) {
   const db = getDb();
 

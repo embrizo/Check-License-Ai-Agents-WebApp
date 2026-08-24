@@ -4,21 +4,20 @@
   "main": "index.ts",
   "compatibility_date": "2026-08-21",
 
-  // Cloudflare cron is UTC-only — this is the same 1am UTC schedule the old
-  // vercel.json used. The app computes days-remaining in each org's own
-  // timezone, so the trigger hour only decides *when* the batch runs, not
-  // which licenses it catches.
+  // Runs HOURLY (UTC), on the hour. Each org only actually sends during its own
+  // configured send hour in its own timezone (org_settings.alertSendHour) —
+  // dailyCheck gates on that. Hourly cadence is what lets any chosen hour fire.
   //
   // NOTE: Cloudflare cron is "at-least-once" — a run may occasionally fire
   // twice. That is safe here: the uq_alert_dedup constraint plus the race
   // handling in src/server/jobs/dailyCheck.ts make a duplicate run a no-op.
   "triggers": {
-    "crons": ["0 1 * * *"]
+    "crons": ["0 * * * *"]
   },
 
   "vars": {
     // Set this to the deployed app origin after the FIRST app deploy prints it.
-    "APP_URL": "https://license-webapp.<your-subdomain>.workers.dev"
+    "APP_URL": "https://license-webapp.3mbr1z0.workers.dev"
   }
 
   // Secret (must MATCH the app's CRON_SECRET):

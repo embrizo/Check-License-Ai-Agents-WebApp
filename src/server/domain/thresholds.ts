@@ -25,6 +25,17 @@ export function crossesThreshold(remaining: number | null, thresholdDays: number
   return remaining <= thresholdDays;
 }
 
+/**
+ * True when `now` falls in the org's configured send hour, evaluated in the
+ * org's own timezone (never the server's — same D11 rule as daysRemaining). The
+ * daily cron runs hourly and checks every org each run; this is what gates an
+ * org to fire only during its chosen hour. Hour granularity — the hourly cron
+ * cadence makes finer control meaningless.
+ */
+export function isSendHour(alertSendHour: number, timezone: string, now: Date = new Date()): boolean {
+  return toZonedTime(now, timezone).getHours() === alertSendHour;
+}
+
 export type ExpiryBucket = "expired" | "critical" | "warning" | "ok" | "perpetual";
 
 export function bucketFor(remaining: number | null): ExpiryBucket {

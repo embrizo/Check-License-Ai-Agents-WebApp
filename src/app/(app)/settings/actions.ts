@@ -13,6 +13,7 @@ const SettingsInput = z.object({
   alertRecipients: z.string().transform(splitEmailList),
   productFilterRegex: z.string().transform((v) => v.trim() || null),
   timezone: z.string().min(1),
+  alertSendHour: z.coerce.number().int().min(0).max(23),
   notifyCustomerContacts: z.boolean(),
   aiEnabled: z.boolean(),
 });
@@ -36,6 +37,7 @@ export async function saveSettings(_prevState: SettingsState, formData: FormData
     alertRecipients: formData.get("alertRecipients") ?? "",
     productFilterRegex: formData.get("productFilterRegex") ?? "",
     timezone: formData.get("timezone") ?? "Asia/Bangkok",
+    alertSendHour: formData.get("alertSendHour") ?? 8,
     notifyCustomerContacts: formData.get("notifyCustomerContacts") === "on",
     aiEnabled: formData.get("aiEnabled") === "on",
   });

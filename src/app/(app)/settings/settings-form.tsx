@@ -13,6 +13,7 @@ interface Props {
   alertRecipients: string;
   productFilterRegex: string;
   timezone: string;
+  alertSendHour: number;
   notifyCustomerContacts: boolean;
   aiEnabled: boolean;
 }
@@ -57,6 +58,21 @@ export function SettingsForm(props: Props) {
           <div className="flex flex-col gap-2">
             <Label htmlFor="timezone">Timezone</Label>
             <Input id="timezone" name="timezone" defaultValue={props.timezone} placeholder="Asia/Bangkok" />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="alertSendHour">Alert send time</Label>
+            <select
+              id="alertSendHour"
+              name="alertSendHour"
+              defaultValue={String(props.alertSendHour)}
+              className="h-9 rounded-md border bg-transparent px-3 text-sm"
+            >
+              {Array.from({ length: 24 }, (_, h) => (
+                <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">Hour the daily alert email is sent, in the timezone above. Alerts are checked hourly.</p>
           </div>
 
           <label className="flex items-center gap-2 text-sm">

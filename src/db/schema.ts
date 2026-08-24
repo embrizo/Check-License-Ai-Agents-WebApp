@@ -149,6 +149,9 @@ export const orgSettings = pgTable("org_settings", {
   timezone: text("timezone").notNull().default("Asia/Bangkok"),
   notifyCustomerContacts: boolean("notify_customer_contacts").notNull().default(false),
   aiEnabled: boolean("ai_enabled").notNull().default(true),
+  // Hour of day (0–23), in `timezone`, the daily alert email goes out. The cron
+  // runs hourly and each org only sends during this hour. Default 8 = 08:00.
+  alertSendHour: integer("alert_send_hour").notNull().default(8),
 });
 
 /* ---------- operational ---------- */

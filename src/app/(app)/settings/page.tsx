@@ -20,6 +20,7 @@ export default async function SettingsPage() {
         alertRecipients={(settings?.alertRecipients ?? []).join("\n")}
         productFilterRegex={settings?.productFilterRegex ?? ""}
         timezone={settings?.timezone ?? "Asia/Bangkok"}
+        alertSendHour={settings?.alertSendHour ?? 8}
         notifyCustomerContacts={settings?.notifyCustomerContacts ?? false}
         aiEnabled={settings?.aiEnabled ?? true}
       />
