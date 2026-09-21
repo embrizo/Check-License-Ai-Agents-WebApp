@@ -2,7 +2,7 @@ import "server-only";
 import { Resend } from "resend";
 import { getEnv } from "@/lib/env";
 
-const FROM_ADDRESS = "License Alerts <alerts@mat.co.th>"; // update once the domain is DKIM/SPF-verified in Resend (docs/01 D8)
+const FROM_ADDRESS = "License Alerts <pattapon@mat.co.th>"; // update once the domain is DKIM/SPF-verified in Resend (docs/01 D8)
 
 export interface SendEmailInput {
   to: string[];
