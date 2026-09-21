@@ -41,7 +41,7 @@ const AiParseResult = z.object({
 export type AiParsedLicense = z.infer<typeof AiParsedLicense>;
 export type AiParseResult = z.infer<typeof AiParseResult>;
 
-const PARSE_MODEL = "gemini-2.5-flash";
+const PARSE_MODEL = "gemini-3.6-flash";
 
 const PARSE_SYSTEM = `You extract software license entitlements from license files.
 
@@ -157,7 +157,7 @@ export async function aiParse(orgId: string, userId: string, content: string): P
 const DraftResult = z.object({ subject: z.string(), body: z.string() });
 export type DraftResult = z.infer<typeof DraftResult>;
 
-const DRAFT_MODEL = "gemini-2.5-flash";
+const DRAFT_MODEL = "gemini-3.6-flash";
 
 export async function draftRenewalEmail(
   orgId: string,
