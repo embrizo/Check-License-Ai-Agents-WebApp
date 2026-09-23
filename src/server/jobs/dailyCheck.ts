@@ -91,7 +91,7 @@ export async function runDailyCheckTracked(
 }
 
 async function runDailyCheckInternal(
-  trigger: "cron" | "manual",
+  _trigger: "cron" | "manual",
   now: Date = new Date(),
 ): Promise<DailyCheckStats> {
   const stats: DailyCheckStats = {
@@ -99,10 +99,16 @@ async function runDailyCheckInternal(
   };
   const orgIds = await listActiveOrgIds();
 
-  // The cron runs hourly; a scheduled run only sends for orgs whose configured
-  // send hour matches now (in their timezone). A *manual* "Run check now" must
-  // ignore that gate — an admin testing at 3pm still expects it to send.
-  const ignoreSendHour = trigger === "manual";
+  // Hour-gating (org_settings.alertSendHour) is only SAFE when the cron runs
+  // more often than the granularity it gates on — i.e. hourly. Vercel Hobby
+  // caps cron to once per day, so if this were still `trigger === "manual"`,
+  // any org whose configured hour doesn't match that one fixed daily instant
+  // would never be checked again — not "delayed", *never* — for as long as
+  // the plan stays Hobby. That is exactly the silent-alerter-death this app
+  // exists to prevent, so it's unconditional until the cron is hourly again
+  // (Vercel Pro, or the dormant Cloudflare cron-worker path). See docs/08 and
+  // the "Alert send time" caveat on /settings.
+  const ignoreSendHour = true;
 
   for (const orgId of orgIds) {
     // One tenant's failure must never abort the rest of the run. A transient

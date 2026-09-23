@@ -72,7 +72,16 @@ export function SettingsForm(props: Props) {
                 <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
               ))}
             </select>
-            <p className="text-xs text-muted-foreground">Hour the daily alert email is sent, in the timezone above. Alerts are checked hourly.</p>
+            <p className="text-xs text-muted-foreground">
+              Hour the daily alert email is sent, in the timezone above.
+            </p>
+            <p className="text-xs text-amber-600 dark:text-amber-500">
+              Not honored yet — the current hosting plan checks all organizations
+              once daily at a fixed time, regardless of this setting. Your
+              licenses are still checked and alerted every day; only this exact
+              hour isn&apos;t yet in effect. Set it now if you like — it applies
+              automatically once per-org scheduling is enabled.
+            </p>
           </div>
 
           <label className="flex items-center gap-2 text-sm">
