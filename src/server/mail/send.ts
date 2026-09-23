@@ -2,7 +2,9 @@ import "server-only";
 import { Resend } from "resend";
 import { getEnv } from "@/lib/env";
 
-const FROM_ADDRESS = "License Alerts <pattapon@mat.co.th>"; // update once the domain is DKIM/SPF-verified in Resend (docs/01 D8)
+// Overridable via RESEND_FROM_ADDRESS (docs/01 D8) — e.g. Resend's
+// onboarding@resend.dev sandbox sender while mat.co.th isn't yet verified.
+const DEFAULT_FROM_ADDRESS = "License Alerts <pattapon@mat.co.th>";
 
 export interface SendEmailInput {
   to: string[];
@@ -33,7 +35,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
     return { ok: false, providerMessageId: null, error: "No recipients" };
   }
 
-  const { RESEND_API_KEY } = getEnv();
+  const { RESEND_API_KEY, RESEND_FROM_ADDRESS } = getEnv();
   if (!RESEND_API_KEY) {
     console.log(`[DUMMY MAIL MODE] Would send to ${input.to.join(", ")}`);
     console.log(`Subject: ${input.subject}\n${input.text}`);
@@ -44,7 +46,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
 
   try {
     const { data, error } = await cachedClient.emails.send({
-      from: FROM_ADDRESS,
+      from: RESEND_FROM_ADDRESS ?? DEFAULT_FROM_ADDRESS,
       to: input.to,
       subject: input.subject,
       text: input.text,
