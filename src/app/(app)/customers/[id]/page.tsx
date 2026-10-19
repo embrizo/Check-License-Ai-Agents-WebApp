@@ -7,7 +7,7 @@ import { listLicensesByCustomer } from "@/server/data/licenses";
 import { getOrgSettings } from "@/server/data/organizationSettings";
 import { daysRemaining, bucketFor, type ExpiryBucket } from "@/server/domain/thresholds";
 import { formatSeats } from "@/server/domain/seats";
-import { AddContactForm, DeleteContactButton } from "../customer-forms";
+import { AddContactForm, DeleteContactButton, DeleteCustomerButton } from "../customer-forms";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -48,7 +48,10 @@ export default async function CustomerDetailPage({
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">{customer.name}</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-xl font-semibold">{customer.name}</h1>
+        <DeleteCustomerButton customerId={customer.id} name={customer.name} />
+      </div>
 
       <Card>
         <CardHeader><CardTitle className="text-base">Licenses ({licenses.length})</CardTitle></CardHeader>

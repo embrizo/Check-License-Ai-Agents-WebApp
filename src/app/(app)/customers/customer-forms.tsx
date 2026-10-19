@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useTransition } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { runAction } from "@/lib/run-action";
 import {
-  createCustomerAction, addContactAction, deleteContactAction, type CustomerFormState,
+  createCustomerAction, addContactAction, deleteContactAction, deleteCustomerAction, type CustomerFormState,
 } from "./actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -70,6 +71,51 @@ export function AddContactForm({ customerId }: { customerId: string }) {
       </form>
       {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
     </div>
+  );
+}
+
+/**
+ * Deletes the whole customer — only allowed when it has no licenses/files
+ * (the action enforces that and returns a message otherwise). Two-step confirm;
+ * on success the customer page is gone, so navigate back to the list.
+ */
+export function DeleteCustomerButton({ customerId, name }: { customerId: string; name: string }) {
+  const [confirming, setConfirming] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
+
+  function del() {
+    startTransition(async () => {
+      const ok = await runAction(() => deleteCustomerAction(customerId), `Deleted "${name}".`);
+      if (ok) router.push("/customers");
+      else setConfirming(false);
+    });
+  }
+
+  if (!confirming) {
+    return (
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        className="text-destructive hover:text-destructive"
+        onClick={() => setConfirming(true)}
+      >
+        Delete customer
+      </Button>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="text-xs text-muted-foreground">Delete this customer?</span>
+      <Button type="button" size="sm" variant="destructive" disabled={pending} onClick={del}>
+        {pending ? "Deleting…" : "Yes"}
+      </Button>
+      <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => setConfirming(false)}>
+        No
+      </Button>
+    </span>
   );
 }
 
