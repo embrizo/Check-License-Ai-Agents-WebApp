@@ -1,13 +1,13 @@
 import {
   pgTable, uuid, text, integer, boolean, date, timestamp,
-  jsonb, uniqueIndex, index, pgEnum, real,
+  jsonb, uniqueIndex, unique, index, pgEnum, real,
 } from "drizzle-orm/pg-core";
 
 /* ---------- enums ---------- */
 export const userRole = pgEnum("user_role", ["super_admin", "org_admin", "member"]);
 export const subStatus = pgEnum("subscription_status", ["active", "expired", "suspended", "trial"]);
 export const licStatus = pgEnum("license_status", ["ACTIVE", "PERPETUAL", "UNKNOWN"]);
-export const parseSource = pgEnum("parse_source", ["flexlm", "ai", "manual"]);
+export const parseSource = pgEnum("parse_source", ["flexlm", "ai", "manual", "flexnet"]);
 export const reviewState = pgEnum("review_state", ["confirmed", "pending_review"]);
 
 export type UserRole = (typeof userRole.enumValues)[number];
@@ -96,6 +96,16 @@ export const licenseFiles = pgTable("license_files", {
   orgIdx: index("ix_files_org").on(t.organizationId),
 }));
 
+/**
+ * Extra, vendor-specific identifiers an AI parse surfaces that have no dedicated
+ * column — e.g. a Kepware renewal PDF's Emergency Activation ID, Hardware Key ID
+ * and "Cert Required?". Kept as label/value pairs so the shape doesn't need a
+ * schema change per vendor. `null` for FlexLM/manual rows and for AI rows with
+ * nothing extra. See docs/05.
+ */
+export type LicenseAttribute = { label: string; value: string };
+export type LicenseMetadata = { attributes: LicenseAttribute[] };
+
 export const licenses = pgTable("licenses", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id").notNull()
@@ -115,9 +125,17 @@ export const licenses = pgTable("licenses", {
   status: licStatus("status").notNull().default("ACTIVE"),
   reviewState: reviewState("review_state").notNull().default("confirmed"),
   confidence: real("confidence"), // AI-parsed rows only (docs/05 §2); null for flexlm/manual
+  metadata: jsonb("metadata").$type<LicenseMetadata>(), // extra identifiers with no column (AI only); null otherwise
   lastScannedAt: timestamp("last_scanned_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
-  uq: uniqueIndex("uq_license_file_product").on(t.licenseFileId, t.productName),
+  // One row per (file, product, licenseKey): a subscription file can list the
+  // same product under several activation IDs (a Kepware renewal PDF ships two
+  // activations per product), and each must keep its own row + metadata rather
+  // than overwriting the last. `nullsNotDistinct` keeps FlexLM behaviour intact
+  // — its rows often have a null licenseKey, and NULLS NOT DISTINCT makes two
+  // null-key rows for the same product collide (one row, idempotent re-upload)
+  // exactly as the old (file, product) key did.
+  uq: unique("uq_license_file_product_key").on(t.licenseFileId, t.productName, t.licenseKey).nullsNotDistinct(),
   expIdx: index("ix_licenses_org_expire").on(t.organizationId, t.expireDate),
   custIdx: index("ix_licenses_customer").on(t.customerId),
 }));

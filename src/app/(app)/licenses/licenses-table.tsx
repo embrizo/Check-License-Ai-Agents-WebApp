@@ -4,10 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import type { ExpiryBucket } from "@/server/domain/thresholds";
+import type { LicenseMetadata } from "@/db/schema";
 import { formatSeats } from "@/server/domain/seats";
 import { Badge } from "@/components/ui/badge";
 import { TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { ReviewCell } from "./review-cell";
+import { LicenseAttributes } from "./license-attributes";
 import { DeleteLicenseButton } from "./delete-license-button";
 
 export type LicenseRow = {
@@ -22,6 +24,7 @@ export type LicenseRow = {
   bucket: ExpiryBucket;
   reviewState: string;
   confidence: number | null;
+  metadata: LicenseMetadata | null;
 };
 
 export const BUCKET_BADGE: Record<ExpiryBucket, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -45,6 +48,7 @@ function LicenseDetailRow({ r, indent }: { r: LicenseRow; indent: boolean }) {
         <Link href={`/customers/${r.customerId}`} className="hover:underline">
           {r.productName}
         </Link>
+        <LicenseAttributes metadata={r.metadata} />
       </TableCell>
       <TableCell>{indent ? null : r.customerName}</TableCell>
       <TableCell className="text-muted-foreground">{r.vendor ?? "—"}</TableCell>

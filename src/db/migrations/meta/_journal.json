@@ -29,6 +29,27 @@
       "when": 1787542821761,
       "tag": "0003_volatile_mikhail_rasputin",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792577712320,
+      "tag": "0004_conscious_polaris",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792579901516,
+      "tag": "0005_petite_punisher",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792999209691,
+      "tag": "0006_amusing_skin",
+      "breakpoints": true
     }
   ]
 }

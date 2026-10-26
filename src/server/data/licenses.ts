@@ -80,6 +80,9 @@ export async function upsertLicensesForFile(input: {
   const { organizationId, customerId, licenseFileId, parsed } = input;
 
   for (const lic of parsed) {
+    // Extra identifiers with no dedicated column (the FlexNet parser populates
+    // these; FlexLM leaves attributes undefined → null).
+    const metadata = lic.attributes && lic.attributes.length > 0 ? { attributes: lic.attributes } : null;
     await db.insert(licenses).values({
       organizationId,
       customerId,
@@ -92,17 +95,18 @@ export async function upsertLicensesForFile(input: {
       expireDate: lic.expireDate,
       seats: lic.seats,
       status: lic.status,
+      metadata,
       lastScannedAt: new Date(),
     }).onConflictDoUpdate({
-      target: [licenses.licenseFileId, licenses.productName],
+      target: [licenses.licenseFileId, licenses.productName, licenses.licenseKey],
       set: {
         vendor: lic.vendor,
-        licenseKey: lic.licenseKey,
         soldTo: lic.soldTo,
         version: lic.version,
         expireDate: lic.expireDate,
         seats: lic.seats,
         status: lic.status,
+        metadata,
         lastScannedAt: new Date(),
       },
     });
@@ -147,6 +151,8 @@ export async function upsertAiLicensesForFile(input: {
   let upserted = 0;
 
   for (const lic of parsed) {
+    // cleanAttributes (in aiParse) already returns null or a non-empty array.
+    const metadata = lic.attributes ? { attributes: lic.attributes } : null;
     const written = await db.insert(licenses).values({
       organizationId,
       customerId,
@@ -160,9 +166,10 @@ export async function upsertAiLicensesForFile(input: {
       status: lic.status,
       reviewState: "pending_review",
       confidence: lic.confidence,
+      metadata,
       lastScannedAt: new Date(),
     }).onConflictDoUpdate({
-      target: [licenses.licenseFileId, licenses.productName],
+      target: [licenses.licenseFileId, licenses.productName, licenses.licenseKey],
       setWhere: eq(licenses.reviewState, "pending_review"),
       set: {
         vendor: lic.vendor ?? null,
@@ -173,6 +180,7 @@ export async function upsertAiLicensesForFile(input: {
         status: lic.status,
         reviewState: "pending_review",
         confidence: lic.confidence,
+        metadata,
         lastScannedAt: new Date(),
       },
     }).returning({ id: licenses.id });

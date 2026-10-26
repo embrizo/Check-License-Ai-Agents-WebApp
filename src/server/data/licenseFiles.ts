@@ -3,6 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { licenseFiles } from "@/db/schema";
 
+type ParseSource = (typeof licenseFiles.parseSource.enumValues)[number];
+
 export async function listLicenseFiles(orgId: string, customerId?: string) {
   const db = getDb();
   const where = customerId
@@ -42,6 +44,8 @@ export async function upsertLicenseFile(input: {
   sizeBytes: number;
   parseError: string | null;
   uploadedBy: string;
+  /** Provenance of the stored content; defaults to the column default ("flexlm") when omitted. */
+  parseSource?: ParseSource;
 }) {
   const db = getDb();
   const existing = await getLicenseFileByName(input.organizationId, input.customerId, input.filename);
@@ -55,6 +59,7 @@ export async function upsertLicenseFile(input: {
         parseError: input.parseError,
         uploadedBy: input.uploadedBy,
         uploadedAt: new Date(),
+        ...(input.parseSource ? { parseSource: input.parseSource } : {}),
       })
       .where(eq(licenseFiles.id, existing.id))
       .returning();

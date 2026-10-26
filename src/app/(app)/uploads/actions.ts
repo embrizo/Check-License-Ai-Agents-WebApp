@@ -9,12 +9,17 @@ import { getLicenseFileByName, upsertLicenseFile, getLicenseFile, setLicenseFile
 import { upsertLicensesForFile, upsertAiLicensesForFile } from "@/server/data/licenses";
 import { hashContent } from "@/server/domain/hashing";
 import { parse as parseFlexlm } from "@/server/domain/parsers/flexlm";
+import { parse as parseFlexnet } from "@/server/domain/parsers/flexnet";
+import { extractPrintableStrings } from "@/server/domain/binaryStrings";
+import { extractPdfText } from "@/server/ingest/pdf";
 import { getOrgSettings } from "@/server/data/organizationSettings";
 import { aiParse, QuotaError } from "@/server/ai/gemini";
 
 const MAX_FILE_BYTES = 1_000_000; // docs/08 §Input handling
 const MAX_FILES_PER_REQUEST = 20;
-const ALLOWED_EXTENSIONS = /\.(lic|txt|dat|log)$/i;
+const ALLOWED_EXTENSIONS = /\.(lic|txt|dat|log|pdf|bin)$/i;
+const PDF_EXTENSION = /\.pdf$/i;
+const BIN_EXTENSION = /\.bin$/i;
 
 export type UploadFileResult =
   | { filename: string; status: "parsed"; upserted: number; staleDeleted: number }
@@ -55,17 +60,44 @@ export async function uploadLicenseFiles(_prevState: UploadState, formData: Form
       continue;
     }
     if (!ALLOWED_EXTENSIONS.test(file.name)) {
-      results.push({ filename: file.name, status: "error", message: "Unsupported file type (.lic/.txt/.dat/.log only)." });
+      results.push({ filename: file.name, status: "error", message: "Unsupported file type (.lic/.txt/.dat/.log/.pdf/.bin only)." });
       continue;
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    if (buffer.includes(0)) {
-      results.push({ filename: file.name, status: "error", message: "File doesn't look like text (contains binary data)." });
-      continue;
+    const isPdf = PDF_EXTENSION.test(file.name);
+    const isBin = BIN_EXTENSION.test(file.name);
+
+    // PDFs and FlexNet `.bin` capability responses are binary, so we extract
+    // their readable text and treat that as the file content from here on. A
+    // `.txt`/`.lic`/etc. is used as-is, with the binary guard rejecting
+    // anything that isn't really text.
+    let content: string;
+    if (isPdf) {
+      try {
+        content = await extractPdfText(new Uint8Array(buffer));
+      } catch {
+        results.push({ filename: file.name, status: "error", message: "Couldn't read this PDF — it may be corrupt or password-protected." });
+        continue;
+      }
+      if (!content) {
+        results.push({ filename: file.name, status: "error", message: "No text found in this PDF — a scanned-image PDF can't be read." });
+        continue;
+      }
+    } else if (isBin) {
+      content = extractPrintableStrings(new Uint8Array(buffer)).join("\n");
+      if (!content.trim()) {
+        results.push({ filename: file.name, status: "error", message: "No readable text found in this .bin file." });
+        continue;
+      }
+    } else {
+      if (buffer.includes(0)) {
+        results.push({ filename: file.name, status: "error", message: "File doesn't look like text (contains binary data)." });
+        continue;
+      }
+      content = buffer.toString("utf-8");
     }
 
-    const content = buffer.toString("utf-8");
     const contentHash = hashContent(content);
 
     const existing = await getLicenseFileByName(orgId, customerId, file.name);
@@ -74,9 +106,13 @@ export async function uploadLicenseFiles(_prevState: UploadState, formData: Form
       continue;
     }
 
-    const { licenses: parsed, warnings } = parseFlexlm(content);
+    // A .bin is a FlexNet capability response; everything else goes through the
+    // FlexLM line parser (PDFs that aren't FlexLM fall through to AI parse).
+    const { licenses: parsed, warnings } = isBin ? parseFlexnet(content) : parseFlexlm(content);
     const parseError = parsed.length === 0
-      ? "No recognised FlexLM license lines found in this file."
+      ? (isBin
+          ? "No recognised FlexNet capability entitlements found in this file."
+          : "No recognised FlexLM license lines found in this file.")
       : (warnings.length > 0 ? warnings.join("; ") : null);
 
     const { file: fileRow } = await upsertLicenseFile({
@@ -88,6 +124,7 @@ export async function uploadLicenseFiles(_prevState: UploadState, formData: Form
       sizeBytes: buffer.length,
       parseError,
       uploadedBy: session.user.id,
+      ...(isBin ? { parseSource: "flexnet" as const } : {}),
     });
 
     if (parsed.length === 0) {

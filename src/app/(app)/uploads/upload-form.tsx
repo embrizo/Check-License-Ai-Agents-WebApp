@@ -118,7 +118,12 @@ export function UploadForm({ customers }: { customers: { id: string; name: strin
             <input type="hidden" name="customerId" value={customerId} />
             <div className="flex flex-col gap-2">
               <Label htmlFor="files">Files</Label>
-              <Input id="files" name="files" type="file" multiple required accept=".lic,.txt,.dat,.log" />
+              <Input id="files" name="files" type="file" multiple required accept=".lic,.txt,.dat,.log,.pdf,.bin" />
+              <p className="text-xs text-muted-foreground">
+                FlexLM files (.lic/.txt/.dat/.log) and FlexNet capability responses (.bin) parse
+                automatically. PDFs (e.g. subscription renewal confirmations) are read as text, then
+                use <span className="font-medium">Try AI parse</span> to extract the licenses for review.
+              </p>
             </div>
             {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
             <Button type="submit" disabled={pending || !customerId} className="w-fit">
