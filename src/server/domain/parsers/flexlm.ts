@@ -10,6 +10,8 @@
  *   INCREMENT nx11101 siemens 34.0 31-dec-2026 5 VENDOR_STRING=... SN=123456
  */
 
+import type { LicenseAttribute } from "@/server/domain/licenseAttributes";
+
 export type LicenseStatus = "ACTIVE" | "PERPETUAL" | "UNKNOWN";
 
 export interface ParsedLicense {
@@ -21,6 +23,8 @@ export interface ParsedLicense {
   status: LicenseStatus;
   soldTo: string | null;
   version: string | null;
+  /** Extra identifiers with no dedicated column (used by the FlexNet parser; left undefined by FlexLM). Stored on licenses.metadata. */
+  attributes?: LicenseAttribute[] | null;
 }
 
 export interface ParseResult {
@@ -50,8 +54,8 @@ const MONTHS: Record<string, number> = {
   jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
 };
 
-/** Parses FlexLM's `%d-%b-%Y` date format (e.g. "31-dec-2026"). Returns null if not a real calendar date. */
-function parseFlexlmDate(value: string): string | null {
+/** Parses FlexLM's `%d-%b-%Y` date format (e.g. "31-dec-2026"). Returns null if not a real calendar date. Exported for reuse by the FlexNet parser, whose dates use the same format. */
+export function parseFlexlmDate(value: string): string | null {
   const match = /^(\d{1,2})-([a-z]{3})-(\d{1,4})$/i.exec(value);
   if (!match) return null;
 

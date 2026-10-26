@@ -1,0 +1,2 @@
+DROP INDEX "uq_license_file_product";--> statement-breakpoint
+ALTER TABLE "licenses" ADD CONSTRAINT "uq_license_file_product_key" UNIQUE NULLS NOT DISTINCT("license_file_id","product_name","license_key");

@@ -11,7 +11,7 @@ export default async function UploadsPage() {
       <div>
         <h1 className="text-xl font-semibold">Upload license files</h1>
         <p className="text-sm text-muted-foreground">
-          .lic / .txt / .dat / .log, up to 1 MB each, 20 files per upload.
+          .lic / .txt / .dat / .log / .pdf / .bin, up to 1 MB each, 20 files per upload.
         </p>
       </div>
       <UploadForm customers={customers.map((c) => ({ id: c.id, name: c.name }))} />

@@ -14,6 +14,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { ReviewCell } from "../../licenses/review-cell";
+import { LicenseAttributes } from "../../licenses/license-attributes";
 import { RenewalDraftDialog } from "../../licenses/renewal-draft-dialog";
 import { DeleteLicenseButton } from "../../licenses/delete-license-button";
 
@@ -74,7 +75,10 @@ export default async function CustomerDetailPage({
                   const badge = BUCKET_BADGE[bucketFor(daysRemaining(lic.expireDate, timezone))];
                   return (
                     <TableRow key={lic.id}>
-                      <TableCell className="font-medium">{lic.productName}</TableCell>
+                      <TableCell className="font-medium">
+                        {lic.productName}
+                        <LicenseAttributes metadata={lic.metadata} />
+                      </TableCell>
                       <TableCell className="text-muted-foreground">{lic.vendor ?? "—"}</TableCell>
                       <TableCell>{lic.expireDate ?? "—"}</TableCell>
                       <TableCell><Badge variant={badge.variant}>{badge.label}</Badge></TableCell>

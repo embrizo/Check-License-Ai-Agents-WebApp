@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getEnv } from "@/lib/env";
 import { countAiCallsThisMonth, logAiUsage } from "@/server/data/aiUsage";
 import { getActiveSubscription } from "@/server/data/subscriptions";
+import { cleanAttributes } from "@/server/domain/licenseAttributes";
 
 export class QuotaError extends Error {
   constructor(message: string) { super(message); this.name = "QuotaError"; }
@@ -21,6 +22,10 @@ export async function assertAiQuota(orgId: string) {
 
 /* ---------- Feature A: parse an unrecognised license format ---------- */
 
+// coerce: an all-digit activation/hardware-key id the model returns as a JSON
+// number becomes a string instead of failing validation.
+const AiLicenseAttribute = z.object({ label: z.coerce.string(), value: z.coerce.string() });
+
 const AiParsedLicense = z.object({
   productName: z.string(),
   vendor: z.string().nullable().optional(),
@@ -30,6 +35,12 @@ const AiParsedLicense = z.object({
   seats: z.number().int().nullable().optional(),
   status: z.enum(["ACTIVE", "PERPETUAL", "UNKNOWN"]),
   confidence: z.number().min(0).max(1),
+  // Extra identifiers with no dedicated column (e.g. a Kepware PDF's Emergency
+  // Activation ID, Hardware Key ID, Cert Required) — stored on licenses.metadata.
+  // `.catch` keeps a malformed attribute from aborting the whole file's parse:
+  // on failure the field drops to undefined and the license (and its other
+  // fields) survives, the same resilience contract postValidate provides.
+  attributes: z.array(AiLicenseAttribute).nullable().optional().catch(undefined),
 });
 
 const AiParseResult = z.object({
@@ -52,6 +63,11 @@ Rules:
 - If you cannot determine a field, use null. Do not substitute a plausible value.
 - Ambiguous or unreadable date -> expireDate null, status UNKNOWN, confidence < 0.5.
 - Dates like "31-dec-2026" are day-month-year. Convert to 2026-12-31.
+- Put any additional identifiers or fields that belong to a license but don't fit
+  the fields above — e.g. activation IDs, emergency activation IDs, hardware key
+  IDs, certificate requirements — into "attributes" as {label, value} pairs, using
+  the label exactly as the document presents it. Do not repeat a value you already
+  placed in another field. Omit attributes entirely if there are none.
 - Return an empty licenses array if the document contains no license entitlements.`;
 
 const PARSE_RESPONSE_SCHEMA = {
@@ -70,6 +86,18 @@ const PARSE_RESPONSE_SCHEMA = {
           seats: { type: Type.INTEGER, nullable: true },
           status: { type: Type.STRING, enum: ["ACTIVE", "PERPETUAL", "UNKNOWN"] },
           confidence: { type: Type.NUMBER, description: "0..1" },
+          attributes: {
+            type: Type.ARRAY,
+            description: "Extra identifiers/fields that don't fit the columns above (activation IDs, hardware key IDs, cert requirements, …), as label/value pairs. Omit if none.",
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                label: { type: Type.STRING },
+                value: { type: Type.STRING },
+              },
+              required: ["label", "value"],
+            },
+          },
         },
         required: ["productName", "status", "confidence"],
       },
@@ -93,16 +121,18 @@ function postValidate(result: AiParseResult): AiParseResult {
   const minYear = thisYear - 20;
   const maxYear = thisYear + 30;
 
-  const licenses = result.licenses.filter((lic) => {
-    if (lic.expireDate) {
-      const match = /^(\d{4})-\d{2}-\d{2}$/.exec(lic.expireDate);
-      if (!match) return false;
-      const year = Number(match[1]);
-      if (year < minYear || year > maxYear) return false;
-    }
-    if (lic.seats != null && lic.seats < 0) return false;
-    return true;
-  });
+  const licenses = result.licenses
+    .filter((lic) => {
+      if (lic.expireDate) {
+        const match = /^(\d{4})-\d{2}-\d{2}$/.exec(lic.expireDate);
+        if (!match) return false;
+        const year = Number(match[1]);
+        if (year < minYear || year > maxYear) return false;
+      }
+      if (lic.seats != null && lic.seats < 0) return false;
+      return true;
+    })
+    .map((lic) => ({ ...lic, attributes: cleanAttributes(lic.attributes) }));
 
   return { ...result, licenses };
 }
