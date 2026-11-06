@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
+import { toast } from "sonner";
 import { runAction } from "@/lib/run-action";
 import {
-  createUserAction, toggleUserActiveAction, changeUserRoleAction, type CreateUserState,
+  createUserAction, toggleUserActiveAction, changeUserRoleAction, reissueSetupLinkAction, type CreateUserState,
 } from "./actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,10 +25,22 @@ export function UserManagement({ orgId, users }: { orgId: string; users: UserRow
   const boundCreate = createUserAction.bind(null, orgId);
   const [state, action, pending] = useActionState<CreateUserState, FormData>(boundCreate, undefined);
   const [pendingRow, startRowTransition] = useTransition();
+  const [reissued, setReissued] = useState<{ email: string; url: string } | null>(null);
 
   const setupLink = state?.setupToken
     ? `${typeof window !== "undefined" ? window.location.origin : ""}/set-password?token=${state.setupToken}`
     : null;
+
+  function reissueLink(userId: string, email: string) {
+    startRowTransition(async () => {
+      const result = await reissueSetupLinkAction(orgId, userId);
+      if ("token" in result) {
+        setReissued({ email, url: `${window.location.origin}/set-password?token=${result.token}` });
+      } else {
+        toast.error(result.error);
+      }
+    });
+  }
 
   function toggleActive(userId: string, isActive: boolean) {
     startRowTransition(async () => {
@@ -78,9 +91,14 @@ export function UserManagement({ orgId, users }: { orgId: string; users: UserRow
                     <Badge variant={u.isActive ? "default" : "secondary"}>{u.isActive ? "active" : "deactivated"}</Badge>
                   </TableCell>
                   <TableCell>
-                    <Button type="button" variant="ghost" size="sm" disabled={pendingRow} onClick={() => toggleActive(u.id, !u.isActive)}>
-                      {u.isActive ? "Deactivate" : "Reactivate"}
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button type="button" variant="ghost" size="sm" disabled={pendingRow} onClick={() => reissueLink(u.id, u.email)}>
+                        Set-password link
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" disabled={pendingRow} onClick={() => toggleActive(u.id, !u.isActive)}>
+                        {u.isActive ? "Deactivate" : "Reactivate"}
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -117,6 +135,13 @@ export function UserManagement({ orgId, users }: { orgId: string; users: UserRow
           <div className="rounded-md border bg-muted/50 p-3 text-sm">
             <p className="mb-1 font-medium">Account created. Share this one-time set-password link (expires in 24h):</p>
             <code className="break-all">{setupLink}</code>
+          </div>
+        )}
+
+        {reissued && (
+          <div className="rounded-md border bg-muted/50 p-3 text-sm">
+            <p className="mb-1 font-medium">New one-time set-password link for {reissued.email} (expires in 24h, single use):</p>
+            <code className="break-all">{reissued.url}</code>
           </div>
         )}
       </CardContent>

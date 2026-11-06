@@ -6,7 +6,7 @@ import { z } from "zod";
 import { addMonths } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { requireOrgAccess } from "@/server/auth/guards";
-import { createUser, setUserActive, setUserRole } from "@/server/data/users";
+import { createUser, getUser, setUserActive, setUserRole } from "@/server/data/users";
 import { createSetupToken } from "@/server/data/passwordSetupTokens";
 import {
   extendSubscription, getActiveSubscription, setSubscriptionStatus,
@@ -71,6 +71,36 @@ export async function createUserAction(orgId: string, _prevState: CreateUserStat
 
   revalidatePath(`/admin/organizations/${orgId}`);
   return { setupToken: token };
+}
+
+export type ReissueLinkState = { error: string } | { token: string };
+
+/**
+ * Issues a fresh single-use set-password link for an EXISTING user — for when
+ * the original (24h, single-use) link expired or was lost before they set a
+ * password, or when an admin wants to let a user reset a forgotten one. Same
+ * token mechanism as createUserAction; it never reveals or changes the current
+ * password, it just hands out a new way to set one. super_admin only.
+ */
+export async function reissueSetupLinkAction(orgId: string, userId: string): Promise<ReissueLinkState> {
+  const { session } = await requireOrgAccess({ role: "super_admin" });
+
+  // org-scoped so a super_admin can't mint a token for a user in another tenant.
+  const user = await getUser(orgId, userId);
+  if (!user) return { error: "That user doesn't belong to this organization." };
+
+  const token = await createSetupToken(user.id);
+
+  await recordAuditLog({
+    organizationId: orgId,
+    userId: session.user.id,
+    action: "user.setup_link_reissued",
+    targetType: "user",
+    targetId: user.id,
+    metadata: { email: user.email },
+  });
+
+  return { token };
 }
 
 export async function toggleUserActiveAction(orgId: string, userId: string, isActive: boolean) {
