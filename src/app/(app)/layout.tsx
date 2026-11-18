@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser, SESSION_END_ROUTE } from "@/server/auth/guards";
 import { checkAccess } from "@/server/auth/subscription";
+import { getI18n } from "@/i18n/server";
+import { I18nProvider } from "@/i18n/provider";
 import { Nav } from "./nav";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -13,7 +15,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     ? await checkAccess(user.organizationId)
     : null;
 
+  const { locale, dict } = await getI18n();
+
   return (
+    <I18nProvider locale={locale} dict={dict}>
     <div className="flex flex-1 flex-col">
       <Nav name={user.name} email={user.email} role={user.role} />
       {access && !access.ok && (
@@ -27,5 +32,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       )}
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>
     </div>
+    </I18nProvider>
   );
 }

@@ -4,18 +4,12 @@ import { listLicenses } from "@/server/data/licenses";
 import { listCertificatesWithCustomer } from "@/server/data/certificates";
 import { getOrgSettings } from "@/server/data/organizationSettings";
 import { daysRemaining, bucketFor, type ExpiryBucket } from "@/server/domain/thresholds";
+import { getI18n } from "@/i18n/server";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-
-const BUCKET_LABEL: Record<ExpiryBucket, string> = {
-  expired: "Expired",
-  critical: "≤ 15 days",
-  warning: "≤ 30 days",
-  ok: "Healthy",
-  perpetual: "Perpetual / unknown",
-};
 
 export default async function DashboardPage() {
   const { session, orgId } = await requireOrgAccess();
+  const { dict } = await getI18n();
 
   if (!orgId) {
     return (
@@ -60,13 +54,13 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Welcome, {session.user.name ?? session.user.email}</h1>
+      <h1 className="text-xl font-semibold">{dict.dashboard.welcome}, {session.user.name ?? session.user.email}</h1>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         {(Object.keys(counts) as ExpiryBucket[]).map((bucket) => (
           <Card key={bucket}>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-normal text-muted-foreground">
-                {BUCKET_LABEL[bucket]}
+                {dict.buckets[bucket]}
               </CardTitle>
             </CardHeader>
             <CardContent className="text-2xl font-semibold">{counts[bucket]}</CardContent>
@@ -75,25 +69,25 @@ export default async function DashboardPage() {
       </div>
       {licenses.length === 0 && (
         <p className="text-muted-foreground">
-          No licenses yet.{" "}
+          {dict.dashboard.noLicenses}{" "}
           <Link href="/uploads" className="underline">
-            Upload a license file
+            {dict.dashboard.uploadToStart}
           </Link>{" "}
-          to get started.
+          {dict.dashboard.toGetStarted}
         </p>
       )}
 
       <div className="space-y-3 pt-2">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">ใบเซอร์ / Certificates</h2>
-          <Link href="/certificates" className="text-sm underline">ดูทั้งหมด</Link>
+          <h2 className="text-lg font-semibold">{dict.dashboard.certsHeading}</h2>
+          <Link href="/certificates" className="text-sm underline">{dict.dashboard.viewAll}</Link>
         </div>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {certBuckets.map((bucket) => (
             <Card key={bucket}>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-normal text-muted-foreground">
-                  {BUCKET_LABEL[bucket]}
+                  {dict.buckets[bucket]}
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold">{certCounts[bucket]}</CardContent>
@@ -102,9 +96,9 @@ export default async function DashboardPage() {
         </div>
         {certs.length === 0 && (
           <p className="text-muted-foreground">
-            ยังไม่มีใบเซอร์.{" "}
-            <Link href="/certificates" className="underline">เพิ่มใบเซอร์</Link>{" "}
-            เพื่อเริ่มติดตามวันหมดอายุ
+            {dict.dashboard.noCerts}{" "}
+            <Link href="/certificates" className="underline">{dict.dashboard.addCertToStart}</Link>{" "}
+            {dict.dashboard.toTrack}
           </p>
         )}
       </div>

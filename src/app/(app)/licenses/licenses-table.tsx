@@ -6,6 +6,7 @@ import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import type { ExpiryBucket } from "@/server/domain/thresholds";
 import type { LicenseMetadata } from "@/db/schema";
 import { formatSeats } from "@/server/domain/seats";
+import { useI18n } from "@/i18n/provider";
 import { Badge } from "@/components/ui/badge";
 import { TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { ReviewCell } from "./review-cell";
@@ -27,12 +28,12 @@ export type LicenseRow = {
   metadata: LicenseMetadata | null;
 };
 
-export const BUCKET_BADGE: Record<ExpiryBucket, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  expired: { label: "Expired", variant: "destructive" },
-  critical: { label: "≤ 15 days", variant: "destructive" },
-  warning: { label: "≤ 30 days", variant: "secondary" },
-  ok: { label: "Healthy", variant: "default" },
-  perpetual: { label: "Perpetual", variant: "outline" },
+export const BUCKET_VARIANT: Record<ExpiryBucket, "default" | "secondary" | "destructive" | "outline"> = {
+  expired: "destructive",
+  critical: "destructive",
+  warning: "secondary",
+  ok: "default",
+  perpetual: "outline",
 };
 
 // Lower = more urgent; used to pick the "worst" badge for a collapsed customer group.
@@ -41,7 +42,7 @@ const BUCKET_SEVERITY: Record<ExpiryBucket, number> = {
 };
 
 function LicenseDetailRow({ r, indent }: { r: LicenseRow; indent: boolean }) {
-  const badge = BUCKET_BADGE[r.bucket];
+  const { dict } = useI18n();
   return (
     <TableRow>
       <TableCell className={indent ? "pl-8 font-medium" : "font-medium"}>
@@ -54,7 +55,7 @@ function LicenseDetailRow({ r, indent }: { r: LicenseRow; indent: boolean }) {
       <TableCell className="text-muted-foreground">{r.vendor ?? "—"}</TableCell>
       <TableCell className="text-muted-foreground">{r.version ?? "—"}</TableCell>
       <TableCell>{r.expireDate ?? "—"}</TableCell>
-      <TableCell><Badge variant={badge.variant}>{badge.label}</Badge></TableCell>
+      <TableCell><Badge variant={BUCKET_VARIANT[r.bucket]}>{dict.buckets[r.bucket]}</Badge></TableCell>
       <TableCell>{formatSeats(r.seats)}</TableCell>
       <TableCell>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -69,12 +70,12 @@ function LicenseDetailRow({ r, indent }: { r: LicenseRow; indent: boolean }) {
 }
 
 function CustomerGroup({ customerId, customerName, rows }: { customerId: string; customerName: string; rows: LicenseRow[] }) {
+  const { dict } = useI18n();
   const [open, setOpen] = useState(false);
 
   if (rows.length === 1) return <LicenseDetailRow r={rows[0]} indent={false} />;
 
   const worst = rows.reduce((a, b) => (BUCKET_SEVERITY[b.bucket] < BUCKET_SEVERITY[a.bucket] ? b : a));
-  const badge = BUCKET_BADGE[worst.bucket];
 
   return (
     <>
@@ -85,11 +86,11 @@ function CustomerGroup({ customerId, customerName, rows }: { customerId: string;
             <Link href={`/customers/${customerId}`} className="hover:underline" onClick={(e) => e.stopPropagation()}>
               {customerName}
             </Link>
-            <Badge variant="outline">{rows.length} licenses</Badge>
+            <Badge variant="outline">{rows.length} {dict.nav.licenses}</Badge>
           </span>
         </TableCell>
         <TableCell colSpan={2}>
-          <Badge variant={badge.variant}>{badge.label}{rows.length > 1 ? " (worst)" : ""}</Badge>
+          <Badge variant={BUCKET_VARIANT[worst.bucket]}>{dict.buckets[worst.bucket]}</Badge>
         </TableCell>
         <TableCell colSpan={2} />
       </TableRow>
@@ -99,12 +100,13 @@ function CustomerGroup({ customerId, customerName, rows }: { customerId: string;
 }
 
 export function LicensesTable({ rows, grouped }: { rows: LicenseRow[]; grouped: boolean }) {
+  const { dict } = useI18n();
   if (rows.length === 0) {
     return (
       <TableBody>
         <TableRow>
           <TableCell colSpan={8} className="text-center text-muted-foreground">
-            No licenses match.
+            {dict.licenses.noneMatch}
           </TableCell>
         </TableRow>
       </TableBody>

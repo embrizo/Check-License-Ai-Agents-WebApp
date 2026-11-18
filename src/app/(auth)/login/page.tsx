@@ -1,3 +1,4 @@
+import { getI18n } from "@/i18n/server";
 import { LoginForm } from "./login-form";
 
 export default async function LoginPage({
@@ -6,6 +7,7 @@ export default async function LoginPage({
   searchParams: Promise<{ callbackUrl?: string; passwordUpdated?: string; sessionEnded?: string }>;
 }) {
   const { callbackUrl, passwordUpdated, sessionEnded } = await searchParams;
+  const { dict } = await getI18n();
 
   // Without this the user is dumped back on a blank sign-in form with no idea
   // why — the likeliest reason being that an administrator deactivated them.
@@ -17,7 +19,7 @@ export default async function LoginPage({
 
   return (
     <div className="flex flex-1 items-center justify-center p-4">
-      <LoginForm callbackUrl={callbackUrl ?? "/dashboard"} notice={notice} />
+      <LoginForm callbackUrl={callbackUrl ?? "/dashboard"} notice={notice} t={dict.login} />
     </div>
   );
 }

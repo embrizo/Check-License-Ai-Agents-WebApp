@@ -10,6 +10,7 @@ import {
   CERT_TYPE_PRESETS, computeExpiry, findPreset, isValidDateString,
   type CertCategory,
 } from "@/server/domain/certificates";
+import { useI18n } from "@/i18n/provider";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -56,6 +57,8 @@ const EMPTY: CertInitial = {
  * hidden mirrors for the Select-driven fields so they reach FormData.
  */
 function CertFields({ initial, customers }: { initial: CertInitial; customers: CustomerOption[] }) {
+  const { dict } = useI18n();
+  const d = dict.certificates;
   const [category, setCategory] = useState<CertCategory>(initial.category);
   const [certType, setCertType] = useState(initial.certType);
   const [holderName, setHolderName] = useState(initial.holderName ?? "");
@@ -91,22 +94,22 @@ function CertFields({ initial, customers }: { initial: CertInitial; customers: C
       <input type="hidden" name="customerId" value={customerId} />
 
       <div className="flex flex-col gap-1">
-        <Label>Category / ประเภท</Label>
+        <Label>{d.fCategory}</Label>
         <Select value={category} onValueChange={(v) => v && setCategory(v as CertCategory)}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="personal">Personal — เซอร์ส่วนบุคคล</SelectItem>
-            <SelectItem value="inspection">Inspection — ตรวจ/ประจำปี</SelectItem>
+            <SelectItem value="personal">{d.categoryPersonal}</SelectItem>
+            <SelectItem value="inspection">{d.categoryInspection}</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       <div className="flex flex-col gap-1">
-        <Label htmlFor="certType">Certificate type / ชนิดเซอร์</Label>
+        <Label htmlFor="certType">{d.fType}</Label>
         <Input
           id="certType" name="certType" list="cert-type-presets" required
           value={certType} onChange={(e) => onPickType(e.target.value)}
-          placeholder="เช่น ที่อับอากาศ"
+          placeholder={d.fTypePlaceholder}
         />
         <datalist id="cert-type-presets">
           {CERT_TYPE_PRESETS.map((p) => (
@@ -116,20 +119,20 @@ function CertFields({ initial, customers }: { initial: CertInitial; customers: C
       </div>
 
       <div className="flex flex-col gap-1">
-        <Label htmlFor="holderName">Holder / ชื่อผู้ถือ {category === "personal" && <span className="text-destructive">*</span>}</Label>
+        <Label htmlFor="holderName">{d.fHolder} {category === "personal" && <span className="text-destructive">*</span>}</Label>
         <Input
           id="holderName" name="holderName"
           value={holderName} onChange={(e) => setHolderName(e.target.value)}
-          placeholder={category === "inspection" ? "— ไม่ระบุ —" : "ชื่อพนักงาน"}
+          placeholder={category === "inspection" ? d.fHolderNone : d.fHolderPlaceholder}
         />
       </div>
 
       <div className="flex flex-col gap-1">
-        <Label>Site / ไซต์ (optional)</Label>
+        <Label>{d.fSite}</Label>
         <Select value={customerId || "none"} onValueChange={(v) => setCustomerId(v === "none" ? "" : (v ?? ""))}>
-          <SelectTrigger><SelectValue placeholder="— ไม่ระบุ —" /></SelectTrigger>
+          <SelectTrigger><SelectValue placeholder={d.fSiteNone} /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="none">— ไม่ระบุ —</SelectItem>
+            <SelectItem value="none">{d.fSiteNone}</SelectItem>
             {customers.map((c) => (
               <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
             ))}
@@ -138,43 +141,44 @@ function CertFields({ initial, customers }: { initial: CertInitial; customers: C
       </div>
 
       <div className="flex flex-col gap-1">
-        <Label htmlFor="issueDate">Issue date / วันออก <span className="text-destructive">*</span></Label>
+        <Label htmlFor="issueDate">{d.fIssueDate} <span className="text-destructive">*</span></Label>
         <Input id="issueDate" name="issueDate" type="date" required
           value={issueDate}
           onChange={(e) => { setIssueDate(e.target.value); autoExpiry(e.target.value, renewalMonths); }} />
       </div>
 
       <div className="flex flex-col gap-1">
-        <Label htmlFor="renewalMonths">Renewal cycle (months) / รอบต่ออายุ</Label>
+        <Label htmlFor="renewalMonths">{d.fRenewal}</Label>
         <Input id="renewalMonths" name="renewalMonths" type="number" min={1} max={600} required
           value={renewalMonths}
           onChange={(e) => { setRenewalMonths(e.target.value); autoExpiry(issueDate, e.target.value); }} />
       </div>
 
       <div className="flex flex-col gap-1">
-        <Label htmlFor="expireDate">Expiry date / วันหมดอายุ <span className="text-destructive">*</span></Label>
+        <Label htmlFor="expireDate">{d.fExpiry} <span className="text-destructive">*</span></Label>
         <Input id="expireDate" name="expireDate" type="date" required
           value={expireDate}
           onChange={(e) => { setExpireDate(e.target.value); setExpiryManual(true); }} />
-        <p className="text-xs text-muted-foreground">คำนวณอัตโนมัติจากวันออก + รอบ — แก้ไขได้</p>
+        <p className="text-xs text-muted-foreground">{d.fExpiryHint}</p>
       </div>
 
       <div className="flex flex-col gap-1">
-        <Label htmlFor="certNumber">Certificate no. / เลขทะเบียน</Label>
+        <Label htmlFor="certNumber">{d.fCertNo}</Label>
         <Input id="certNumber" name="certNumber"
           value={certNumber} onChange={(e) => setCertNumber(e.target.value)}
-          placeholder="เช่น 69252-023" />
+          placeholder="69252-023" />
       </div>
 
       <div className="flex flex-col gap-1 sm:col-span-2">
-        <Label htmlFor="notes">Notes / หมายเหตุ</Label>
-        <Input id="notes" name="notes" defaultValue={initial.notes ?? ""} placeholder="optional" />
+        <Label htmlFor="notes">{d.fNotes}</Label>
+        <Input id="notes" name="notes" defaultValue={initial.notes ?? ""} placeholder={d.fNotesPlaceholder} />
       </div>
     </div>
   );
 }
 
 export function CreateCertificateCard({ customers }: { customers: CustomerOption[] }) {
+  const { dict } = useI18n();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string>();
   const [formKey, setFormKey] = useState(0); // bump to remount (reset) the fields
@@ -195,7 +199,7 @@ export function CreateCertificateCard({ customers }: { customers: CustomerOption
   }
 
   if (!open) {
-    return <Button type="button" onClick={() => setOpen(true)}>+ เพิ่มใบเซอร์</Button>;
+    return <Button type="button" onClick={() => setOpen(true)}>{dict.certificates.add}</Button>;
   }
 
   return (
@@ -205,8 +209,8 @@ export function CreateCertificateCard({ customers }: { customers: CustomerOption
           <CertFields key={formKey} initial={EMPTY} customers={customers} />
           {error && <p className="text-sm text-destructive">{error}</p>}
           <div className="flex gap-2">
-            <Button type="submit" disabled={pending}>{pending ? "กำลังบันทึก…" : "บันทึก"}</Button>
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>ปิด</Button>
+            <Button type="submit" disabled={pending}>{pending ? dict.common.saving : dict.common.save}</Button>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>{dict.common.close}</Button>
           </div>
         </form>
       </CardContent>
@@ -217,6 +221,7 @@ export function CreateCertificateCard({ customers }: { customers: CustomerOption
 export function EditCertificateButton({
   certId, initial, customers,
 }: { certId: string; initial: CertInitial; customers: CustomerOption[] }) {
+  const { dict } = useI18n();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
@@ -236,18 +241,18 @@ export function EditCertificateButton({
 
   return (
     <>
-      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>Edit</Button>
+      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>{dict.common.edit}</Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>แก้ไขใบเซอร์</DialogTitle>
+            <DialogTitle>{dict.certificates.editTitle}</DialogTitle>
           </DialogHeader>
           <form onSubmit={submit} className="space-y-4">
             <CertFields initial={initial} customers={customers} />
             {error && <p className="text-sm text-destructive">{error}</p>}
             <div className="flex gap-2">
-              <Button type="submit" disabled={pending}>{pending ? "กำลังบันทึก…" : "บันทึก"}</Button>
-              <Button type="button" variant="ghost" onClick={() => setOpen(false)}>ยกเลิก</Button>
+              <Button type="submit" disabled={pending}>{pending ? dict.common.saving : dict.common.save}</Button>
+              <Button type="button" variant="ghost" onClick={() => setOpen(false)}>{dict.common.cancel}</Button>
             </div>
           </form>
         </DialogContent>
@@ -257,13 +262,14 @@ export function EditCertificateButton({
 }
 
 export function DeleteCertificateButton({ certId, label }: { certId: string; label: string }) {
+  const { dict } = useI18n();
   const [confirming, setConfirming] = useState(false);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
   function del() {
     startTransition(async () => {
-      const ok = await runAction(() => deleteCertificateAction(certId), `ลบ "${label}" แล้ว`);
+      const ok = await runAction(() => deleteCertificateAction(certId), `${dict.common.deleted}: ${label}`);
       if (ok) router.refresh();
       else setConfirming(false);
     });
@@ -273,18 +279,18 @@ export function DeleteCertificateButton({ certId, label }: { certId: string; lab
     return (
       <Button type="button" size="sm" variant="ghost"
         className="text-destructive hover:text-destructive"
-        onClick={() => setConfirming(true)}>Delete</Button>
+        onClick={() => setConfirming(true)}>{dict.common.delete}</Button>
     );
   }
 
   return (
     <span className="inline-flex items-center gap-1">
-      <span className="text-xs text-muted-foreground">ลบ?</span>
+      <span className="text-xs text-muted-foreground">{dict.certificates.deleteConfirm}</span>
       <Button type="button" size="sm" variant="destructive" disabled={pending} onClick={del}>
-        {pending ? "กำลังลบ…" : "ใช่"}
+        {pending ? dict.common.deleting : dict.common.yes}
       </Button>
       <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => setConfirming(false)}>
-        ไม่
+        {dict.common.no}
       </Button>
     </span>
   );

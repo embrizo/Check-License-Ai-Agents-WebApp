@@ -3,6 +3,8 @@ import { requireOrg } from "@/server/auth/guards";
 import { listLicensesWithCustomer } from "@/server/data/licenses";
 import { getOrgSettings } from "@/server/data/organizationSettings";
 import { daysRemaining, bucketFor } from "@/server/domain/thresholds";
+import { getI18n } from "@/i18n/server";
+import { tf } from "@/i18n/dictionaries";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -35,6 +37,8 @@ export default async function LicensesPage({
   searchParams: Promise<{ q?: string; bucket?: string; sort?: string; dir?: string; group?: string }>;
 }) {
   const { orgId } = await requireOrg();
+  const { dict } = await getI18n();
+  const d = dict.licenses;
   const params = await searchParams;
   const q = (params.q ?? "").trim().toLowerCase();
   const bucketFilter = params.bucket ?? "all";
@@ -79,11 +83,11 @@ export default async function LicensesPage({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Licenses</h1>
+        <h1 className="text-xl font-semibold">{d.title}</h1>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-muted-foreground">{rows.length} of {licenses.length}</span>
+          <span className="text-sm text-muted-foreground">{tf(d.ofTotal, { shown: rows.length, total: licenses.length })}</span>
           <a href="/api/export/xlsx" className={buttonVariants({ variant: "outline", size: "sm" })}>
-            Export .xlsx
+            {d.export}
           </a>
         </div>
       </div>
@@ -92,7 +96,7 @@ export default async function LicensesPage({
         {sort && <input type="hidden" name="sort" value={sort} />}
         {dir && <input type="hidden" name="dir" value={dir} />}
         {grouped && <input type="hidden" name="group" value="1" />}
-        <Input name="q" defaultValue={params.q ?? ""} placeholder="Search product, customer, vendor…" className="max-w-xs" />
+        <Input name="q" defaultValue={params.q ?? ""} placeholder={d.searchPlaceholder} className="max-w-xs" />
         <div className="flex flex-wrap gap-1">
           {(["all", "expired", "critical", "warning", "ok", "perpetual"] as const).map((b) => (
             <Link
@@ -100,7 +104,7 @@ export default async function LicensesPage({
               href={`/licenses?${new URLSearchParams({ ...(q ? { q } : {}), ...(b !== "all" ? { bucket: b } : {}), sort, dir, ...(grouped ? { group: "1" } : {}) }).toString()}`}
             >
               <Badge variant={bucketFilter === b ? "default" : "outline"} className="cursor-pointer">
-                {b} {bucketCounts[b] !== undefined ? `(${bucketCounts[b]})` : ""}
+                {b === "all" ? dict.common.all : dict.buckets[b]} {bucketCounts[b] !== undefined ? `(${bucketCounts[b]})` : ""}
               </Badge>
             </Link>
           ))}
@@ -109,7 +113,7 @@ export default async function LicensesPage({
           href={`/licenses?${new URLSearchParams({ ...(q ? { q } : {}), ...(bucketFilter !== "all" ? { bucket: bucketFilter } : {}), sort, dir, ...(grouped ? {} : { group: "1" }) }).toString()}`}
         >
           <Badge variant={grouped ? "default" : "outline"} className="cursor-pointer">
-            Group by customer
+            {d.groupByCustomer}
           </Badge>
         </Link>
       </form>
@@ -118,14 +122,14 @@ export default async function LicensesPage({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>{sortLink(params, "product", "Product")}</TableHead>
-              <TableHead>{sortLink(params, "customer", "Customer")}</TableHead>
-              <TableHead>Vendor</TableHead>
-              <TableHead>Version</TableHead>
-              <TableHead>{sortLink(params, "expire", "Expires")}</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>{sortLink(params, "seats", "Seats")}</TableHead>
-              <TableHead>Actions</TableHead>
+              <TableHead>{sortLink(params, "product", d.colProduct)}</TableHead>
+              <TableHead>{sortLink(params, "customer", d.colCustomer)}</TableHead>
+              <TableHead>{d.colVendor}</TableHead>
+              <TableHead>{d.colVersion}</TableHead>
+              <TableHead>{sortLink(params, "expire", d.colExpires)}</TableHead>
+              <TableHead>{d.colStatus}</TableHead>
+              <TableHead>{sortLink(params, "seats", d.colSeats)}</TableHead>
+              <TableHead>{d.colActions}</TableHead>
             </TableRow>
           </TableHeader>
           <LicensesTable rows={rows} grouped={grouped} />

@@ -4,6 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { uploadLicenseFiles, quickCreateCustomer, tryAiParseAction, type UploadState } from "./actions";
+import { useI18n } from "@/i18n/provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -55,6 +56,8 @@ function TryAiParseButton({ licenseFileId }: { licenseFileId: string }) {
 }
 
 export function UploadForm({ customers }: { customers: { id: string; name: string }[] }) {
+  const { dict } = useI18n();
+  const u = dict.uploads;
   const [state, action, pending] = useActionState<UploadState, FormData>(uploadLicenseFiles, undefined);
   const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
   const [newCustomerName, setNewCustomerName] = useState("");
@@ -86,11 +89,11 @@ export function UploadForm({ customers }: { customers: { id: string; name: strin
       <Card>
         <CardContent className="flex flex-col gap-4 pt-6">
           <div className="flex flex-col gap-2">
-            <Label>Customer</Label>
+            <Label>{u.customer}</Label>
             {customers.length > 0 ? (
               <Select value={customerId} onValueChange={(value) => setCustomerId(value ?? "")}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Choose a customer" />
+                  <SelectValue placeholder={u.chooseCustomer} />
                 </SelectTrigger>
                 <SelectContent>
                   {customers.map((c) => (
@@ -99,17 +102,17 @@ export function UploadForm({ customers }: { customers: { id: string; name: strin
                 </SelectContent>
               </Select>
             ) : (
-              <p className="text-sm text-muted-foreground">No customers yet — add one below.</p>
+              <p className="text-sm text-muted-foreground">{u.noCustomers}</p>
             )}
             <div className="flex gap-2 pt-1">
               <Input
-                placeholder="New customer name"
+                placeholder={u.newCustomer}
                 value={newCustomerName}
                 onChange={(e) => setNewCustomerName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddCustomer(); } }}
               />
               <Button type="button" variant="outline" onClick={handleAddCustomer} disabled={isCreating || !newCustomerName.trim()}>
-                Add
+                {u.add}
               </Button>
             </div>
           </div>
@@ -117,7 +120,7 @@ export function UploadForm({ customers }: { customers: { id: string; name: strin
           <form action={action} className="flex flex-col gap-4">
             <input type="hidden" name="customerId" value={customerId} />
             <div className="flex flex-col gap-2">
-              <Label htmlFor="files">Files</Label>
+              <Label htmlFor="files">{u.files}</Label>
               <Input id="files" name="files" type="file" multiple required accept=".lic,.txt,.dat,.log,.pdf,.bin" />
               <p className="text-xs text-muted-foreground">
                 FlexLM files (.lic/.txt/.dat/.log) and FlexNet capability responses (.bin) parse
@@ -127,7 +130,7 @@ export function UploadForm({ customers }: { customers: { id: string; name: strin
             </div>
             {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
             <Button type="submit" disabled={pending || !customerId} className="w-fit">
-              {pending ? "Uploading…" : "Upload"}
+              {pending ? u.uploading : u.upload}
             </Button>
           </form>
         </CardContent>

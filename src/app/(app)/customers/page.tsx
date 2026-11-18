@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireOrg } from "@/server/auth/guards";
 import { listCustomersWithLicenseCounts } from "@/server/data/customers";
+import { getI18n } from "@/i18n/server";
 import { CreateCustomerForm } from "./customer-forms";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -9,11 +10,13 @@ import {
 
 export default async function CustomersPage() {
   const { orgId } = await requireOrg();
+  const { dict } = await getI18n();
+  const d = dict.customers;
   const customers = await listCustomersWithLicenseCounts(orgId);
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Customers</h1>
+      <h1 className="text-xl font-semibold">{d.title}</h1>
 
       <Card>
         <CardContent className="pt-6">
@@ -25,8 +28,8 @@ export default async function CustomersPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Licenses</TableHead>
+              <TableHead>{d.colName}</TableHead>
+              <TableHead>{d.colLicenses}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -40,7 +43,7 @@ export default async function CustomersPage() {
             ))}
             {customers.length === 0 && (
               <TableRow>
-                <TableCell colSpan={2} className="text-center text-muted-foreground">No customers yet.</TableCell>
+                <TableCell colSpan={2} className="text-center text-muted-foreground">{d.empty}</TableCell>
               </TableRow>
             )}
           </TableBody>

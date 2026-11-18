@@ -6,6 +6,7 @@ import { runAction } from "@/lib/run-action";
 import {
   createCustomerAction, addContactAction, deleteContactAction, deleteCustomerAction, type CustomerFormState,
 } from "./actions";
+import { useI18n } from "@/i18n/provider";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,8 @@ import { Button } from "@/components/ui/button";
  * looking unchanged, or threw straight to the error boundary.
  */
 export function CreateCustomerForm() {
+  const { dict } = useI18n();
+  const d = dict.customers;
   const [state, action, pending] = useActionState<CustomerFormState, FormData>(
     createCustomerAction,
     undefined,
@@ -30,8 +33,8 @@ export function CreateCustomerForm() {
   return (
     <div className="space-y-2">
       <form ref={formRef} action={action} className="flex gap-2">
-        <Input name="name" placeholder="New customer name" required className="max-w-xs" />
-        <Button type="submit" disabled={pending}>{pending ? "Adding…" : "Add customer"}</Button>
+        <Input name="name" placeholder={d.addPlaceholder} required className="max-w-xs" />
+        <Button type="submit" disabled={pending}>{pending ? d.adding : d.addButton}</Button>
       </form>
       {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
     </div>
