@@ -9,6 +9,11 @@ export const subStatus = pgEnum("subscription_status", ["active", "expired", "su
 export const licStatus = pgEnum("license_status", ["ACTIVE", "PERPETUAL", "UNKNOWN"]);
 export const parseSource = pgEnum("parse_source", ["flexlm", "ai", "manual", "flexnet"]);
 export const reviewState = pgEnum("review_state", ["confirmed", "pending_review"]);
+// A tracked certificate is either held by a person (a training cert that lapses
+// — confined space, work-at-height) or a recurring site-level check (a yearly
+// building/electrical inspection, a fire drill). The two differ only in whether
+// `holderName` is meaningful; everything else (issue → expiry, alerting) is shared.
+export const certCategory = pgEnum("cert_category", ["personal", "inspection"]);
 
 export type UserRole = (typeof userRole.enumValues)[number];
 
@@ -155,6 +160,62 @@ export const alertLog = pgTable("alert_log", {
   // THE load-bearing constraint. Never drop this.
   uq: uniqueIndex("uq_alert_dedup").on(t.licenseId, t.thresholdDays, t.expireDate),
   orgIdx: index("ix_alerts_org_sent").on(t.organizationId, t.sentAt),
+}));
+
+/**
+ * Safety/compliance certificates and recurring inspections, tracked purely for
+ * their expiry — the second thing this app watches besides software licenses.
+ * Deliberately a separate table from `licenses`: a cert is held by a *person*
+ * or a *site*, is entered by hand (no FlexLM file), and renews on a fixed cycle
+ * (`renewalMonths`) rather than carrying an explicit vendor expiry. It reuses
+ * the same pure expiry/threshold helpers and a parallel alert path, so the
+ * existing `licenses`/`alert_log` machinery is left untouched.
+ */
+export const certificates = pgTable("certificates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  // Optional grouping by site/company. `set null` (not cascade): deleting a
+  // customer must never silently erase a safety cert's expiry history.
+  customerId: uuid("customer_id").references(() => customers.id, { onDelete: "set null" }),
+  category: certCategory("category").notNull().default("personal"),
+  certType: text("cert_type").notNull(),          // e.g. "ที่อับอากาศ", "ตรวจไฟฟ้า"
+  holderName: text("holder_name"),                 // person for `personal`; null for `inspection`
+  certNumber: text("cert_number"),                 // เลขทะเบียน, e.g. 69252-023
+  issueDate: date("issue_date").notNull(),
+  // Stored, not derived on read: it's what alerts key on, must be queryable, and
+  // is editable — real legal expiry sometimes differs from issue + interval by a
+  // day. Seeded from issueDate + renewalMonths at create time.
+  expireDate: date("expire_date").notNull(),
+  renewalMonths: integer("renewal_months").notNull(), // 60 / 24 / 12
+  notes: text("notes"),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  expIdx: index("ix_certs_org_expire").on(t.organizationId, t.expireDate),
+  orgIdx: index("ix_certs_org").on(t.organizationId),
+}));
+
+/**
+ * The cert equivalent of `alert_log` — kept separate rather than widening the
+ * licenses alert table (whose `uq_alert_dedup` is load-bearing and must not be
+ * touched). Same dedup contract: one email per (cert, threshold, expireDate).
+ */
+export const certAlertLog = pgTable("cert_alert_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  certificateId: uuid("certificate_id").notNull()
+    .references(() => certificates.id, { onDelete: "cascade" }),
+  thresholdDays: integer("threshold_days").notNull(),
+  expireDate: date("expire_date").notNull(),
+  recipients: text("recipients").notNull(),
+  providerMessageId: text("provider_message_id"),
+  sentAt: timestamp("sent_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  uq: uniqueIndex("uq_cert_alert_dedup").on(t.certificateId, t.thresholdDays, t.expireDate),
+  orgIdx: index("ix_cert_alerts_org_sent").on(t.organizationId, t.sentAt),
 }));
 
 /* ---------- per-org configuration ---------- */

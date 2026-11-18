@@ -1,6 +1,7 @@
 import "server-only";
 import { listActiveOrgIds } from "@/server/data/admin/subscriptions";
 import { listAlertCandidates } from "@/server/data/licenses";
+import { listCertAlertCandidates, hasCertAlertBeenSent, recordCertAlert } from "@/server/data/certificates";
 import { getOrgSettings } from "@/server/data/organizationSettings";
 import { listContactsByOrg } from "@/server/data/contacts";
 import { hasAlertBeenSent, recordAlert } from "@/server/data/alertLog";
@@ -8,7 +9,7 @@ import { isUniqueViolation } from "@/server/data/errors";
 import { startJobRun, finishJobRun, DAILY_CHECK } from "@/server/data/admin/jobRuns";
 import { daysRemaining, isSendHour } from "@/server/domain/thresholds";
 import { matchesProductFilter, selectThreshold, dedupKey, buildRecipients } from "@/server/domain/alertLogic";
-import { renderAlertEmail } from "@/server/domain/alertTemplate";
+import { renderAlertEmail, renderCertAlertEmail } from "@/server/domain/alertTemplate";
 import { sendEmail } from "@/server/mail/send";
 import { pingHeartbeat } from "./heartbeat";
 import { notifyOperatorOfFailures } from "./opsAlert";
@@ -140,8 +141,9 @@ async function processOrg(orgId: string, now: Date, stats: DailyCheckStats, igno
     if (!ignoreSendHour && !isSendHour(settings?.alertSendHour ?? 8, timezone, now)) return;
     stats.orgsProcessed++;
 
-    const [candidates, contacts] = await Promise.all([
+    const [candidates, certCandidates, contacts] = await Promise.all([
       listAlertCandidates(orgId),
+      listCertAlertCandidates(orgId),
       listContactsByOrg(orgId),
     ]);
 
@@ -247,6 +249,63 @@ async function processOrg(orgId: string, now: Date, stats: DailyCheckStats, igno
           stats.errors++;
           recordError(stats,
             `${lic.customerName} / ${lic.productName}: alert sent but not logged — ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+
+    // --- certificates: same thresholds, recipients and send-first-log-second
+    // discipline as licenses, against a parallel cert_alert_log. Each cert is a
+    // unique row so there's no product-style per-run dedup; the uq_cert_alert_dedup
+    // row is the only guard against re-sending the same (cert, threshold, expiry).
+    for (const cert of certCandidates) {
+      const expireDate = cert.expireDate;
+      const remaining = daysRemaining(expireDate, timezone, now);
+      const threshold = selectThreshold(remaining, thresholds);
+      if (threshold === null) continue;
+
+      if (await hasCertAlertBeenSent(cert.id, threshold, expireDate)) continue;
+
+      const certLabel = `${cert.certType}${cert.holderName ? ` / ${cert.holderName}` : ""}`;
+      const recipients = buildRecipients({
+        orgRecipients,
+        customerContacts: cert.customerId ? (contactsByCustomer.get(cert.customerId) ?? []) : [],
+        notifyCustomerContacts,
+      });
+      if (recipients.length === 0) {
+        recordError(stats, `WARN cert ${certLabel}: no valid recipients configured — no email sent`);
+        continue;
+      }
+
+      const email = renderCertAlertEmail({
+        certType: cert.certType,
+        holderName: cert.holderName,
+        site: cert.customerName,
+        certNumber: cert.certNumber,
+        expireDate,
+        daysRemaining: remaining!,
+      });
+
+      const result = await sendEmail({ to: recipients, subject: email.subject, text: email.text, html: email.html });
+      if (!result.ok) {
+        stats.errors++;
+        recordError(stats, `cert ${certLabel} -> ${recipients.join(", ")}: ${result.error ?? "send failed"}`);
+        continue;
+      }
+
+      stats.sent++;
+      try {
+        await recordCertAlert({
+          organizationId: orgId,
+          certificateId: cert.id,
+          thresholdDays: threshold,
+          expireDate,
+          recipients,
+          providerMessageId: result.providerMessageId,
+        });
+      } catch (err) {
+        if (!isUniqueViolation(err, "uq_cert_alert_dedup")) {
+          stats.errors++;
+          recordError(stats, `cert ${certLabel}: alert sent but not logged — ${err instanceof Error ? err.message : String(err)}`);
         }
       }
     }

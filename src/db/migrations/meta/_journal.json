@@ -50,6 +50,13 @@
       "when": 1792999209691,
       "tag": "0006_amusing_skin",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794978335452,
+      "tag": "0007_loud_riptide",
+      "breakpoints": true
     }
   ]
 }

@@ -13,6 +13,7 @@ const LINKS = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/licenses", label: "Licenses" },
   { href: "/customers", label: "Customers" },
+  { href: "/certificates", label: "ใบเซอร์" },
   { href: "/uploads", label: "Uploads" },
   { href: "/alerts", label: "Alerts" },
   { href: "/settings", label: "Settings", minRole: "org_admin" as UserRole },
