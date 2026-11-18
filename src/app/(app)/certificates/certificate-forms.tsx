@@ -3,14 +3,17 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { runAction } from "@/lib/run-action";
+import { cn } from "@/lib/utils";
 import {
   createCertificateAction, updateCertificateAction, deleteCertificateAction,
+  suggestCertificateFromPdf, type CertSuggestion,
 } from "./actions";
 import {
   CERT_TYPE_PRESETS, computeExpiry, findPreset, isValidDateString,
   type CertCategory,
 } from "@/server/domain/certificates";
 import { useI18n } from "@/i18n/provider";
+import { tf } from "@/i18n/dictionaries";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -69,12 +72,58 @@ function CertFields({ initial, customers }: { initial: CertInitial; customers: C
   const [expireDate, setExpireDate] = useState(initial.expireDate);
   const [expiryManual, setExpiryManual] = useState(false);
 
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [suggesting, startSuggest] = useTransition();
+  const [suggestMsg, setSuggestMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
   function autoExpiry(nextIssue: string, nextMonths: string) {
     if (expiryManual) return;
     const months = Number(nextMonths);
     if (isValidDateString(nextIssue) && Number.isInteger(months) && months > 0) {
       setExpireDate(computeExpiry(nextIssue, months));
     }
+  }
+
+  function onPickPdf(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // let the same file be re-picked after an edit
+    if (!file) return;
+    const fd = new FormData();
+    fd.set("file", file);
+    setSuggestMsg(null);
+    startSuggest(async () => {
+      const res = await suggestCertificateFromPdf(fd);
+      if (!res.ok) { setSuggestMsg({ ok: false, text: res.error }); return; }
+      applySuggestion(res.suggestion, file.name);
+    });
+  }
+
+  // Pre-fill from an AI reading. Only fields the model actually returned are
+  // touched, and a matching preset wins for cycle/category (canonical over the
+  // model's guess). The user still reviews and can overwrite every field.
+  function applySuggestion(s: CertSuggestion, fileName: string) {
+    let months: number | null = s.renewalMonths;
+    let nextCategory: CertCategory | null = s.category;
+
+    if (s.certType) {
+      setCertType(s.certType);
+      const preset = findPreset(s.certType);
+      if (preset) { months = preset.renewalMonths; nextCategory = preset.category; }
+    }
+    if (nextCategory) setCategory(nextCategory);
+    if (months != null) setRenewalMonths(String(months));
+    if (s.holderName) setHolderName(s.holderName);
+    if (s.certNumber) setCertNumber(s.certNumber);
+    if (s.issueDate) setIssueDate(s.issueDate);
+
+    if (s.expireDate) {
+      setExpireDate(s.expireDate);
+      setExpiryManual(true); // the printed expiry is authoritative; don't recompute over it
+    } else if (s.issueDate && months != null && months > 0 && isValidDateString(s.issueDate)) {
+      setExpireDate(computeExpiry(s.issueDate, months));
+    }
+
+    setSuggestMsg({ ok: true, text: tf(d.suggestFilled, { file: fileName }) });
   }
 
   function onPickType(value: string) {
@@ -92,6 +141,30 @@ function CertFields({ initial, customers }: { initial: CertInitial; customers: C
       {/* hidden mirrors for Select-driven values */}
       <input type="hidden" name="category" value={category} />
       <input type="hidden" name="customerId" value={customerId} />
+
+      {/* PDF auto-fill — reads the certificate and pre-fills the fields below */}
+      <div className="flex flex-col gap-1 rounded-md border border-dashed bg-muted/30 p-3 sm:col-span-2">
+        <Label>{d.suggestLabel}</Label>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* unnamed: not part of the submitted cert FormData */}
+          <input
+            ref={fileRef} type="file" accept="application/pdf"
+            className="hidden" onChange={onPickPdf}
+          />
+          <Button
+            type="button" variant="outline" size="sm" disabled={suggesting}
+            onClick={() => fileRef.current?.click()}
+          >
+            {suggesting ? d.suggestReading : d.suggestChoose}
+          </Button>
+          {suggestMsg && (
+            <span className={cn("text-xs", suggestMsg.ok ? "text-muted-foreground" : "text-destructive")}>
+              {suggestMsg.text}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">{d.suggestHint}</p>
+      </div>
 
       <div className="flex flex-col gap-1">
         <Label>{d.fCategory}</Label>

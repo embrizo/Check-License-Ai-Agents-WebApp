@@ -5,6 +5,7 @@ import { getEnv } from "@/lib/env";
 import { countAiCallsThisMonth, logAiUsage } from "@/server/data/aiUsage";
 import { getActiveSubscription } from "@/server/data/subscriptions";
 import { cleanAttributes } from "@/server/domain/licenseAttributes";
+import { CERT_TYPE_PRESETS } from "@/server/domain/certificates";
 
 export class QuotaError extends Error {
   constructor(message: string) { super(message); this.name = "QuotaError"; }
@@ -52,7 +53,7 @@ const AiParseResult = z.object({
 export type AiParsedLicense = z.infer<typeof AiParsedLicense>;
 export type AiParseResult = z.infer<typeof AiParseResult>;
 
-const PARSE_MODEL = "gemini-3.6-flash";
+const PARSE_MODEL = "gemini-3.8-flash";
 
 const PARSE_SYSTEM = `You extract software license entitlements from license files.
 
@@ -187,7 +188,7 @@ export async function aiParse(orgId: string, userId: string, content: string): P
 const DraftResult = z.object({ subject: z.string(), body: z.string() });
 export type DraftResult = z.infer<typeof DraftResult>;
 
-const DRAFT_MODEL = "gemini-3.6-flash";
+const DRAFT_MODEL = "gemini-3.8-flash";
 
 export async function draftRenewalEmail(
   orgId: string,
@@ -249,6 +250,138 @@ Seats: ${input.seats ?? "unknown"}`;
       userId,
       feature: "draft",
       model: DRAFT_MODEL,
+      inputTokens,
+      outputTokens,
+      succeeded,
+    });
+  }
+}
+
+/* ---------- Feature D: suggest certificate fields from a PDF ---------- */
+
+const AiCertResult = z.object({
+  category: z.enum(["personal", "inspection"]).nullable().optional(),
+  certType: z.string().nullable().optional(),
+  holderName: z.string().nullable().optional(),
+  certNumber: z.string().nullable().optional(),
+  issueDate: z.string().nullable().optional(),
+  expireDate: z.string().nullable().optional(),
+  renewalMonths: z.number().int().nullable().optional(),
+  confidence: z.number().min(0).max(1),
+});
+export type AiCertResult = z.infer<typeof AiCertResult>;
+
+const CERT_MODEL = "gemini-3.8-flash";
+
+const CERT_TYPE_HINT = CERT_TYPE_PRESETS
+  .map((p) => `- "${p.value}" = ${p.labelEn} (${p.category})`)
+  .join("\n");
+
+const CERT_SYSTEM = `You read ONE Thai or English safety / compliance certificate — either a training certificate held by a person, or a building / electrical inspection or fire-drill record — and extract its key fields for a form.
+
+Known certificate types. If the document is one of these, return the Thai value EXACTLY as written here for certType, with the matching category:
+${CERT_TYPE_HINT}
+If it is none of these, return a short descriptive certType (Thai if the document is Thai) and your best category guess: "personal" if it certifies a named individual, "inspection" if it records a recurring site/building inspection or drill.
+
+Rules:
+- Extract ONLY what is literally present. Never invent a value; use null when unsure.
+- holderName: the person the certificate is issued to. null for an inspection record with no individual.
+- certNumber: the certificate / registration number as printed. null if none.
+- Dates MUST be ISO 8601 YYYY-MM-DD in the Gregorian/CE calendar:
+  * Thai certificates often print the Buddhist year (พ.ศ. / B.E.), which is 543 years AHEAD of CE. If a year is 2500 or greater, subtract 543 (e.g. พ.ศ. 2574 → 2031).
+  * Thai dates like "19 ส.ค. 2574" or "19/08/2574" are day-month-year.
+- issueDate: when it was issued or the training was completed. expireDate: the printed expiry/valid-until date, if any.
+- renewalMonths: the stated validity period in months (e.g. "valid 5 years" → 60), else null.
+- confidence: 0..1 for the overall extraction.`;
+
+const CERT_RESPONSE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    category: { type: Type.STRING, enum: ["personal", "inspection"], nullable: true },
+    certType: { type: Type.STRING, nullable: true },
+    holderName: { type: Type.STRING, nullable: true },
+    certNumber: { type: Type.STRING, nullable: true },
+    issueDate: { type: Type.STRING, nullable: true, description: "ISO 8601 YYYY-MM-DD (CE), or null" },
+    expireDate: { type: Type.STRING, nullable: true, description: "ISO 8601 YYYY-MM-DD (CE), or null" },
+    renewalMonths: { type: Type.INTEGER, nullable: true },
+    confidence: { type: Type.NUMBER, description: "0..1" },
+  },
+  required: ["confidence"],
+};
+
+/** Drops a date the model misread (wrong format, or a decade+ out of range) to
+ *  null rather than pre-filling the form with a wrong value the user might miss. */
+function cleanCertDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const match = /^(\d{4})-\d{2}-\d{2}$/.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const thisYear = new Date().getFullYear();
+  if (year < thisYear - 40 || year > thisYear + 40) return null;
+  return value;
+}
+
+/**
+ * Reads a certificate PDF with Gemini and returns suggested form fields. The PDF
+ * is sent inline (not text-extracted) so Thai glyphs that pdf.js can't map are
+ * still read. The result only pre-fills the form — the user reviews and edits
+ * every field before saving; nothing is trusted or written directly.
+ */
+export async function aiExtractCertificate(
+  orgId: string,
+  userId: string,
+  pdfBytes: Uint8Array,
+): Promise<AiCertResult> {
+  await assertAiQuota(orgId);
+
+  const { GEMINI_API_KEY } = getEnv();
+  if (!GEMINI_API_KEY) {
+    throw new Error("PDF auto-fill isn't configured for this deployment (GEMINI_API_KEY missing).");
+  }
+
+  const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+  const base64 = Buffer.from(pdfBytes).toString("base64");
+
+  let succeeded = false;
+  let inputTokens: number | null = null;
+  let outputTokens: number | null = null;
+
+  try {
+    const res = await ai.models.generateContent({
+      model: CERT_MODEL,
+      contents: [{
+        role: "user",
+        parts: [
+          { inlineData: { mimeType: "application/pdf", data: base64 } },
+          { text: "Extract the certificate fields from this document." },
+        ],
+      }],
+      config: {
+        systemInstruction: CERT_SYSTEM,
+        responseMimeType: "application/json",
+        responseSchema: CERT_RESPONSE_SCHEMA,
+        temperature: 0,
+      },
+    });
+
+    inputTokens = res.usageMetadata?.promptTokenCount ?? null;
+    outputTokens = res.usageMetadata?.candidatesTokenCount ?? null;
+
+    const parsed = AiCertResult.parse(JSON.parse(res.text ?? "{}"));
+    succeeded = true;
+    return {
+      ...parsed,
+      issueDate: cleanCertDate(parsed.issueDate),
+      expireDate: cleanCertDate(parsed.expireDate),
+    };
+  } finally {
+    // feature "parse" is reused for the quota/usage ledger — the same per-org
+    // monthly AI budget that governs license parsing covers cert auto-fill.
+    await logAiUsage({
+      organizationId: orgId,
+      userId,
+      feature: "parse",
+      model: CERT_MODEL,
       inputTokens,
       outputTokens,
       succeeded,

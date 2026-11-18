@@ -76,6 +76,11 @@ const en = {
     remainingToday: "today",
     remainingOver: "{n} days ago",
     // form
+    suggestLabel: "Auto-fill from PDF",
+    suggestHint: "Upload the certificate PDF — AI reads it and fills the fields below. Always review before saving.",
+    suggestChoose: "Choose PDF…",
+    suggestReading: "Reading PDF…",
+    suggestFilled: "Filled from {file} — please review.",
     fCategory: "Category",
     fType: "Certificate type",
     fTypePlaceholder: "e.g. Confined space",
@@ -246,6 +251,11 @@ const th: Dict = {
     fNotesPlaceholder: "ไม่บังคับ",
     editTitle: "แก้ไขใบเซอร์",
     deleteConfirm: "ลบ?",
+    suggestLabel: "กรอกอัตโนมัติจาก PDF",
+    suggestHint: "อัปโหลดไฟล์ PDF ของใบเซอร์ — AI จะอ่านและกรอกช่องด้านล่างให้ ตรวจสอบทุกครั้งก่อนบันทึก",
+    suggestChoose: "เลือกไฟล์ PDF…",
+    suggestReading: "กำลังอ่าน PDF…",
+    suggestFilled: "กรอกจาก {file} แล้ว — กรุณาตรวจสอบ",
   },
   licenses: {
     title: "ไลเซนส์",

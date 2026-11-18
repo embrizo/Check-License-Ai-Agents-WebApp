@@ -8,10 +8,83 @@ import {
   type CertificateInput,
 } from "@/server/data/certificates";
 import { getCustomer } from "@/server/data/customers";
+import { getOrgSettings } from "@/server/data/organizationSettings";
 import { recordAuditLog } from "@/server/data/admin/auditLog";
 import { isValidDateString, type CertCategory } from "@/server/domain/certificates";
+import { aiExtractCertificate, QuotaError } from "@/server/ai/gemini";
 
 export type CertFormState = { error?: string; success?: boolean } | undefined;
+
+const MAX_CERT_PDF_BYTES = 5_000_000; // one scanned certificate is well under this
+
+export type CertSuggestion = {
+  category: CertCategory | null;
+  certType: string | null;
+  holderName: string | null;
+  certNumber: string | null;
+  issueDate: string | null;
+  expireDate: string | null;
+  renewalMonths: number | null;
+  confidence: number;
+};
+
+export type CertSuggestState =
+  | { ok: true; suggestion: CertSuggestion }
+  | { ok: false; error: string };
+
+/**
+ * Reads an uploaded certificate PDF with AI and returns suggested field values.
+ * Nothing is saved — the client pre-fills the form with these and the user
+ * reviews/edits before submitting through the validated create/update actions.
+ */
+export async function suggestCertificateFromPdf(formData: FormData): Promise<CertSuggestState> {
+  let orgId: string;
+  let session: Awaited<ReturnType<typeof requireOrg>>["session"];
+  try {
+    ({ orgId, session } = await requireOrg({ write: true }));
+  } catch (err) {
+    const message = guardErrorMessage(err);
+    if (message) return { ok: false, error: message };
+    throw err;
+  }
+
+  const settings = await getOrgSettings(orgId);
+  if (settings?.aiEnabled === false) {
+    return { ok: false, error: "AI features are turned off for this organization (see Settings)." };
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "Choose a PDF file first." };
+  }
+  if (!/\.pdf$/i.test(file.name)) {
+    return { ok: false, error: "Auto-fill reads PDF certificates only." };
+  }
+  if (file.size > MAX_CERT_PDF_BYTES) {
+    return { ok: false, error: "PDF too large (max 5 MB)." };
+  }
+
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const r = await aiExtractCertificate(orgId, session.user.id, bytes);
+    return {
+      ok: true,
+      suggestion: {
+        category: r.category ?? null,
+        certType: r.certType ?? null,
+        holderName: r.holderName ?? null,
+        certNumber: r.certNumber ?? null,
+        issueDate: r.issueDate ?? null,
+        expireDate: r.expireDate ?? null,
+        renewalMonths: r.renewalMonths ?? null,
+        confidence: r.confidence,
+      },
+    };
+  } catch (err) {
+    if (err instanceof QuotaError) return { ok: false, error: err.message };
+    return { ok: false, error: err instanceof Error ? err.message : "Couldn't read this PDF." };
+  }
+}
 
 /**
  * Validates and normalises the shared form fields into a CertificateInput, or
