@@ -271,7 +271,12 @@ const AiCertResult = z.object({
 });
 export type AiCertResult = z.infer<typeof AiCertResult>;
 
-const CERT_MODEL = "gemini-3.8-flash";
+// Tried in order: on a transient failure (503 "high demand", or a 429 once the
+// model's low daily quota is spent) that survives the per-model retries, the
+// next model is tried. Each has its own separate quota, so the chain roughly
+// triples the effective daily budget. All full "Flash" models (not Lite) to
+// keep Thai-certificate reading quality consistent.
+const CERT_MODELS = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-flash"];
 
 const CERT_TYPE_HINT = CERT_TYPE_PRESETS
   .map((p) => `- "${p.value}" = ${p.labelEn} (${p.category})`)
@@ -333,7 +338,7 @@ function isTransientAiError(err: unknown): boolean {
 /** Retries `fn` on a transient error with exponential backoff (700ms, 1.4s).
  *  A single 503 spike resolves on the next attempt most of the time; a
  *  non-transient error (bad key, invalid request) is thrown immediately. */
-async function withAiRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
+async function withAiRetry<T>(fn: () => Promise<T>, tries = 2): Promise<T> {
   let lastErr: unknown;
   for (let i = 0; i < tries; i++) {
     try {
@@ -342,6 +347,40 @@ async function withAiRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
       lastErr = err;
       if (!isTransientAiError(err) || i === tries - 1) throw err;
       await new Promise((resolve) => setTimeout(resolve, 700 * 2 ** i));
+    }
+  }
+  throw lastErr;
+}
+
+/**
+ * Runs the cert extraction across CERT_MODELS in order. Each model gets its own
+ * retry budget; a transient failure falls through to the next model, while a
+ * real error (bad request, bad key) throws at once since another model won't
+ * fix it. Returns which model actually answered, for the usage ledger.
+ */
+async function generateCertWithFallback(ai: GoogleGenAI, base64: string) {
+  const contents = [{
+    role: "user" as const,
+    parts: [
+      { inlineData: { mimeType: "application/pdf", data: base64 } },
+      { text: "Extract the certificate fields from this document." },
+    ],
+  }];
+  const config = {
+    systemInstruction: CERT_SYSTEM,
+    responseMimeType: "application/json",
+    responseSchema: CERT_RESPONSE_SCHEMA,
+    temperature: 0,
+  };
+
+  let lastErr: unknown;
+  for (const model of CERT_MODELS) {
+    try {
+      const res = await withAiRetry(() => ai.models.generateContent({ model, contents, config }));
+      return { res, model };
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientAiError(err)) throw err; // not a capacity problem — the next model won't help
     }
   }
   throw lastErr;
@@ -369,27 +408,13 @@ export async function aiExtractCertificate(
   const base64 = Buffer.from(pdfBytes).toString("base64");
 
   let succeeded = false;
+  let usedModel = CERT_MODELS[0];
   let inputTokens: number | null = null;
   let outputTokens: number | null = null;
 
   try {
-    const res = await withAiRetry(() => ai.models.generateContent({
-      model: CERT_MODEL,
-      contents: [{
-        role: "user",
-        parts: [
-          { inlineData: { mimeType: "application/pdf", data: base64 } },
-          { text: "Extract the certificate fields from this document." },
-        ],
-      }],
-      config: {
-        systemInstruction: CERT_SYSTEM,
-        responseMimeType: "application/json",
-        responseSchema: CERT_RESPONSE_SCHEMA,
-        temperature: 0,
-      },
-    }));
-
+    const { res, model } = await generateCertWithFallback(ai, base64);
+    usedModel = model;
     inputTokens = res.usageMetadata?.promptTokenCount ?? null;
     outputTokens = res.usageMetadata?.candidatesTokenCount ?? null;
 
@@ -403,11 +428,12 @@ export async function aiExtractCertificate(
   } finally {
     // feature "parse" is reused for the quota/usage ledger — the same per-org
     // monthly AI budget that governs license parsing covers cert auto-fill.
+    // Logs whichever model in the fallback chain actually answered.
     await logAiUsage({
       organizationId: orgId,
       userId,
       feature: "parse",
-      model: CERT_MODEL,
+      model: usedModel,
       inputTokens,
       outputTokens,
       succeeded,
