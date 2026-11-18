@@ -1,5 +1,6 @@
 import "server-only";
 import { extractText, getDocumentProxy } from "unpdf";
+import { stripUnstorableChars } from "@/server/domain/textSanitize";
 
 /**
  * Turn an uploaded PDF into plain text so the rest of the ingest pipeline —
@@ -16,5 +17,9 @@ import { extractText, getDocumentProxy } from "unpdf";
 export async function extractPdfText(bytes: Uint8Array): Promise<string> {
   const pdf = await getDocumentProxy(bytes);
   const { text } = await extractText(pdf, { mergePages: true });
-  return text.trim();
+  // pdf.js emits U+0000 for glyphs it can't map (routine with Thai PDFs). A NUL
+  // byte makes the downstream Postgres INSERT throw, so strip it (and the other
+  // C0 controls) before returning — the extracted text must be storable, the
+  // same guarantee the .txt path gets from its binary guard.
+  return stripUnstorableChars(text).trim();
 }
