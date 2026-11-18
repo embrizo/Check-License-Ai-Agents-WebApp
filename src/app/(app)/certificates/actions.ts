@@ -82,7 +82,16 @@ export async function suggestCertificateFromPdf(formData: FormData): Promise<Cer
     };
   } catch (err) {
     if (err instanceof QuotaError) return { ok: false, error: err.message };
-    return { ok: false, error: err instanceof Error ? err.message : "Couldn't read this PDF." };
+    const msg = err instanceof Error ? err.message : "";
+    if (/GEMINI_API_KEY|isn't configured/i.test(msg)) {
+      return { ok: false, error: msg };
+    }
+    // Gemini overload/transient (503 "high demand", 429, 5xx) — already retried
+    // a few times upstream, so surface a short, actionable note, not raw JSON.
+    if (/\b(429|500|502|503|504|UNAVAILABLE|RESOURCE_EXHAUSTED|INTERNAL)\b|overload|high demand/i.test(msg)) {
+      return { ok: false, error: "The AI service is busy right now — please wait a moment and try again." };
+    }
+    return { ok: false, error: "Couldn't read this PDF — please try again, or enter the fields manually." };
   }
 }
 

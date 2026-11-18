@@ -321,6 +321,32 @@ function cleanCertDate(value: string | null | undefined): string | null {
   return value;
 }
 
+/** A temporary Gemini capacity/transport error (503 "high demand", 429, 5xx)
+ *  — worth a quick retry, unlike a 400/404 or a bad API key, which won't heal. */
+const TRANSIENT_AI_ERROR = /\b(429|500|502|503|504|UNAVAILABLE|RESOURCE_EXHAUSTED|INTERNAL|DEADLINE_EXCEEDED)\b|overload|high demand/i;
+
+function isTransientAiError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return TRANSIENT_AI_ERROR.test(msg);
+}
+
+/** Retries `fn` on a transient error with exponential backoff (700ms, 1.4s).
+ *  A single 503 spike resolves on the next attempt most of the time; a
+ *  non-transient error (bad key, invalid request) is thrown immediately. */
+async function withAiRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientAiError(err) || i === tries - 1) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 700 * 2 ** i));
+    }
+  }
+  throw lastErr;
+}
+
 /**
  * Reads a certificate PDF with Gemini and returns suggested form fields. The PDF
  * is sent inline (not text-extracted) so Thai glyphs that pdf.js can't map are
@@ -347,7 +373,7 @@ export async function aiExtractCertificate(
   let outputTokens: number | null = null;
 
   try {
-    const res = await ai.models.generateContent({
+    const res = await withAiRetry(() => ai.models.generateContent({
       model: CERT_MODEL,
       contents: [{
         role: "user",
@@ -362,7 +388,7 @@ export async function aiExtractCertificate(
         responseSchema: CERT_RESPONSE_SCHEMA,
         temperature: 0,
       },
-    });
+    }));
 
     inputTokens = res.usageMetadata?.promptTokenCount ?? null;
     outputTokens = res.usageMetadata?.candidatesTokenCount ?? null;
