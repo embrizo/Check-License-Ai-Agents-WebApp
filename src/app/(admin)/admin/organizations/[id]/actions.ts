@@ -9,8 +9,9 @@ import { requireOrgAccess } from "@/server/auth/guards";
 import { createUser, getUser, setUserActive, setUserRole } from "@/server/data/users";
 import { createSetupToken } from "@/server/data/passwordSetupTokens";
 import {
-  extendSubscription, getActiveSubscription, setSubscriptionStatus,
+  applyDemoPlan, extendSubscription, getActiveSubscription, setSubscriptionStatus,
 } from "@/server/data/subscriptions";
+import { DEMO_DURATION_DAYS } from "@/server/domain/plans";
 import { isUniqueViolation } from "@/server/data/errors";
 import { recordAuditLog } from "@/server/data/admin/auditLog";
 import type { UserRole } from "@/db/schema";
@@ -156,6 +157,33 @@ export async function extendSubscriptionAction(orgId: string, months: number) {
     targetType: "subscription",
     targetId: updated.id,
     metadata: { months, newExpiresAt: next.toISOString() },
+  });
+  revalidatePath(`/admin/organizations/${orgId}`);
+  revalidatePath("/admin");
+  return { ok: true as const };
+}
+
+/**
+ * Puts the org on the `demo` plan — Pro-level features on a short
+ * ({@link DEMO_DURATION_DAYS}-day) window from today — for letting someone try
+ * the full product. Unlike extendSubscriptionAction this sets the window from
+ * *today* on purpose: a demo is "N days from when I hand it over", not an
+ * extension of whatever trial remained.
+ */
+export async function applyDemoPlanAction(orgId: string) {
+  const { session } = await requireOrgAccess({ role: "super_admin" });
+
+  const expiresAt = new Date(Date.now() + DEMO_DURATION_DAYS * 24 * 60 * 60 * 1000);
+  const updated = await applyDemoPlan(orgId, expiresAt);
+  if (!updated) return { error: "This organization has no subscription to update." };
+
+  await recordAuditLog({
+    organizationId: orgId,
+    userId: session.user.id,
+    action: "subscription.demo_plan",
+    targetType: "subscription",
+    targetId: updated.id,
+    metadata: { expiresAt: expiresAt.toISOString() },
   });
   revalidatePath(`/admin/organizations/${orgId}`);
   revalidatePath("/admin");

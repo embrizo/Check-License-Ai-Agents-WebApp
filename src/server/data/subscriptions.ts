@@ -2,6 +2,7 @@ import "server-only";
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { subscriptions } from "@/db/schema";
+import { PLAN_PRESETS } from "@/server/domain/plans";
 
 /** Most recent subscription row for the org — the one enforcement checks against. */
 export async function getActiveSubscription(orgId: string) {
@@ -27,6 +28,32 @@ export async function extendSubscription(orgId: string, newExpiresAt: Date) {
 
   const [row] = await db.update(subscriptions)
     .set({ expiresAt: newExpiresAt, updatedAt: new Date() })
+    .where(eq(subscriptions.id, current.id))
+    .returning();
+  return row ?? null;
+}
+
+/**
+ * Switch the org's current subscription onto the `demo` plan: Pro-level quotas
+ * and `trial` status (which both checkAccess and the daily cron treat as fully
+ * active, so a demo tenant gets real expiry alerts) on the given time window.
+ * Same single-row scoping rule as extendSubscription — see its comment.
+ */
+export async function applyDemoPlan(orgId: string, expiresAt: Date) {
+  const db = getDb();
+  const current = await getActiveSubscription(orgId);
+  if (!current) return null;
+
+  const [row] = await db.update(subscriptions)
+    .set({
+      plan: "demo",
+      status: "trial",
+      maxUsers: PLAN_PRESETS.demo.maxUsers,
+      maxLicenses: PLAN_PRESETS.demo.maxLicenses,
+      aiCallsPerMonth: PLAN_PRESETS.demo.aiCallsPerMonth,
+      expiresAt,
+      updatedAt: new Date(),
+    })
     .where(eq(subscriptions.id, current.id))
     .returning();
   return row ?? null;

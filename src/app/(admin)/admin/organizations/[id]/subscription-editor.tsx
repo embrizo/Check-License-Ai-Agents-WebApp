@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { runAction } from "@/lib/run-action";
-import { extendSubscriptionAction, setSubscriptionStatusAction } from "./actions";
+import { applyDemoPlanAction, extendSubscriptionAction, setSubscriptionStatusAction } from "./actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +40,15 @@ export function SubscriptionEditor({ orgId, subscription }: { orgId: string; sub
     });
   }
 
+  function applyDemo() {
+    startTransition(async () => {
+      await runAction(
+        () => applyDemoPlanAction(orgId),
+        "Demo plan applied — Pro features for 30 days.",
+      );
+    });
+  }
+
   return (
     <Card>
       <CardHeader><CardTitle className="text-base">Subscription</CardTitle></CardHeader>
@@ -66,6 +75,14 @@ export function SubscriptionEditor({ orgId, subscription }: { orgId: string; sub
                   <SelectItem value="expired">expired</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+              <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={applyDemo}>
+                🎁 Set demo (Pro features, 30 days)
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                For letting someone try the full product — Pro-level quotas on a 30-day window.
+              </span>
             </div>
           </>
         ) : (
