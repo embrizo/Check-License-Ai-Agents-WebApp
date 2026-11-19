@@ -53,7 +53,77 @@ const AiParseResult = z.object({
 export type AiParsedLicense = z.infer<typeof AiParsedLicense>;
 export type AiParseResult = z.infer<typeof AiParseResult>;
 
-const PARSE_MODEL = "gemini-3.8-flash";
+// Tried in order across all Gemini features (license parse, renewal email draft,
+// certificate PDF auto-fill): on a transient failure (503 "high demand", 429
+// quota exhaustion, or network/fetch hiccup) that survives the per-model retries,
+// or if a model is unavailable (404), the next model in the chain is tried.
+// Each model has its own separate quota bucket, multiplying the effective daily
+// budget while keeping full Flash quality.
+const FLASH_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-2.5-flash",
+] as const;
+
+/** A temporary Gemini capacity/transport error (503 "high demand", 429, 5xx,
+ *  or transient fetch/socket failure) — worth a quick retry and model fallback. */
+const TRANSIENT_AI_ERROR = /\b(429|500|502|503|504|UNAVAILABLE|RESOURCE_EXHAUSTED|INTERNAL|DEADLINE_EXCEEDED|ECONNRESET|ETIMEDOUT)\b|overload|high demand|fetch failed/i;
+
+/** Model-level 404 / retirement ("no longer available to new users") — don't
+ *  retry the same model, but DO fall through to the next model in FLASH_MODELS. */
+const MODEL_UNAVAILABLE_ERROR = /\b(404|NOT_FOUND)\b|no longer available/i;
+
+function isTransientAiError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return TRANSIENT_AI_ERROR.test(msg);
+}
+
+function shouldFallbackToNextModel(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return TRANSIENT_AI_ERROR.test(msg) || MODEL_UNAVAILABLE_ERROR.test(msg);
+}
+
+/** Retries `fn` on a transient error with exponential backoff (700ms, 1.4s).
+ *  A single 503 spike resolves on the next attempt most of the time; a
+ *  non-transient error (bad key, 404 model, invalid request) is thrown immediately. */
+async function withAiRetry<T>(fn: () => Promise<T>, tries = 2): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientAiError(err) || i === tries - 1) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 700 * 2 ** i));
+    }
+  }
+  throw lastErr;
+}
+
+/**
+ * Runs `ai.models.generateContent` across FLASH_MODELS in order. Each model gets
+ * its own retry budget; a transient or model-unavailable failure falls through
+ * to the next model, while a fatal error (bad request, bad API key) throws at
+ * once. Returns both the response and whichever model actually answered, for
+ * the `ai_usage` ledger.
+ */
+async function generateWithFallback(
+  ai: GoogleGenAI,
+  params: Omit<Parameters<GoogleGenAI["models"]["generateContent"]>[0], "model">,
+) {
+  let lastErr: unknown;
+  for (const model of FLASH_MODELS) {
+    try {
+      const res = await withAiRetry(() => ai.models.generateContent({ model, ...params }));
+      return { res, model };
+    } catch (err) {
+      lastErr = err;
+      if (!shouldFallbackToNextModel(err)) throw err;
+    }
+  }
+  throw lastErr;
+}
 
 const PARSE_SYSTEM = `You extract software license entitlements from license files.
 
@@ -149,12 +219,12 @@ export async function aiParse(orgId: string, userId: string, content: string): P
 
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
   let succeeded = false;
+  let usedModel: string = FLASH_MODELS[0];
   let inputTokens: number | null = null;
   let outputTokens: number | null = null;
 
   try {
-    const res = await ai.models.generateContent({
-      model: PARSE_MODEL,
+    const { res, model } = await generateWithFallback(ai, {
       contents: [{ role: "user", parts: [{ text: content.slice(0, 100_000) }] }],
       config: {
         systemInstruction: PARSE_SYSTEM,
@@ -164,6 +234,7 @@ export async function aiParse(orgId: string, userId: string, content: string): P
       },
     });
 
+    usedModel = model;
     inputTokens = res.usageMetadata?.promptTokenCount ?? null;
     outputTokens = res.usageMetadata?.candidatesTokenCount ?? null;
 
@@ -175,7 +246,7 @@ export async function aiParse(orgId: string, userId: string, content: string): P
       organizationId: orgId,
       userId,
       feature: "parse",
-      model: PARSE_MODEL,
+      model: usedModel,
       inputTokens,
       outputTokens,
       succeeded,
@@ -187,8 +258,6 @@ export async function aiParse(orgId: string, userId: string, content: string): P
 
 const DraftResult = z.object({ subject: z.string(), body: z.string() });
 export type DraftResult = z.infer<typeof DraftResult>;
-
-const DRAFT_MODEL = "gemini-3.8-flash";
 
 export async function draftRenewalEmail(
   orgId: string,
@@ -219,12 +288,12 @@ Days remaining: ${input.daysRemaining}
 Seats: ${input.seats ?? "unknown"}`;
 
   let succeeded = false;
+  let usedModel: string = FLASH_MODELS[0];
   let inputTokens: number | null = null;
   let outputTokens: number | null = null;
 
   try {
-    const res = await ai.models.generateContent({
-      model: DRAFT_MODEL,
+    const { res, model } = await generateWithFallback(ai, {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
         systemInstruction: system,
@@ -238,6 +307,7 @@ Seats: ${input.seats ?? "unknown"}`;
       },
     });
 
+    usedModel = model;
     inputTokens = res.usageMetadata?.promptTokenCount ?? null;
     outputTokens = res.usageMetadata?.candidatesTokenCount ?? null;
 
@@ -249,7 +319,7 @@ Seats: ${input.seats ?? "unknown"}`;
       organizationId: orgId,
       userId,
       feature: "draft",
-      model: DRAFT_MODEL,
+      model: usedModel,
       inputTokens,
       outputTokens,
       succeeded,
@@ -270,13 +340,6 @@ const AiCertResult = z.object({
   confidence: z.number().min(0).max(1),
 });
 export type AiCertResult = z.infer<typeof AiCertResult>;
-
-// Tried in order: on a transient failure (503 "high demand", or a 429 once the
-// model's low daily quota is spent) that survives the per-model retries, the
-// next model is tried. Each has its own separate quota, so the chain roughly
-// triples the effective daily budget. All full "Flash" models (not Lite) to
-// keep Thai-certificate reading quality consistent.
-const CERT_MODELS = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-flash"];
 
 const CERT_TYPE_HINT = CERT_TYPE_PRESETS
   .map((p) => `- "${p.value}" = ${p.labelEn} (${p.category})`)
@@ -326,66 +389,6 @@ function cleanCertDate(value: string | null | undefined): string | null {
   return value;
 }
 
-/** A temporary Gemini capacity/transport error (503 "high demand", 429, 5xx)
- *  — worth a quick retry, unlike a 400/404 or a bad API key, which won't heal. */
-const TRANSIENT_AI_ERROR = /\b(429|500|502|503|504|UNAVAILABLE|RESOURCE_EXHAUSTED|INTERNAL|DEADLINE_EXCEEDED)\b|overload|high demand/i;
-
-function isTransientAiError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return TRANSIENT_AI_ERROR.test(msg);
-}
-
-/** Retries `fn` on a transient error with exponential backoff (700ms, 1.4s).
- *  A single 503 spike resolves on the next attempt most of the time; a
- *  non-transient error (bad key, invalid request) is thrown immediately. */
-async function withAiRetry<T>(fn: () => Promise<T>, tries = 2): Promise<T> {
-  let lastErr: unknown;
-  for (let i = 0; i < tries; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      if (!isTransientAiError(err) || i === tries - 1) throw err;
-      await new Promise((resolve) => setTimeout(resolve, 700 * 2 ** i));
-    }
-  }
-  throw lastErr;
-}
-
-/**
- * Runs the cert extraction across CERT_MODELS in order. Each model gets its own
- * retry budget; a transient failure falls through to the next model, while a
- * real error (bad request, bad key) throws at once since another model won't
- * fix it. Returns which model actually answered, for the usage ledger.
- */
-async function generateCertWithFallback(ai: GoogleGenAI, base64: string) {
-  const contents = [{
-    role: "user" as const,
-    parts: [
-      { inlineData: { mimeType: "application/pdf", data: base64 } },
-      { text: "Extract the certificate fields from this document." },
-    ],
-  }];
-  const config = {
-    systemInstruction: CERT_SYSTEM,
-    responseMimeType: "application/json",
-    responseSchema: CERT_RESPONSE_SCHEMA,
-    temperature: 0,
-  };
-
-  let lastErr: unknown;
-  for (const model of CERT_MODELS) {
-    try {
-      const res = await withAiRetry(() => ai.models.generateContent({ model, contents, config }));
-      return { res, model };
-    } catch (err) {
-      lastErr = err;
-      if (!isTransientAiError(err)) throw err; // not a capacity problem — the next model won't help
-    }
-  }
-  throw lastErr;
-}
-
 /**
  * Reads a certificate PDF with Gemini and returns suggested form fields. The PDF
  * is sent inline (not text-extracted) so Thai glyphs that pdf.js can't map are
@@ -408,12 +411,26 @@ export async function aiExtractCertificate(
   const base64 = Buffer.from(pdfBytes).toString("base64");
 
   let succeeded = false;
-  let usedModel = CERT_MODELS[0];
+  let usedModel: string = FLASH_MODELS[0];
   let inputTokens: number | null = null;
   let outputTokens: number | null = null;
 
   try {
-    const { res, model } = await generateCertWithFallback(ai, base64);
+    const { res, model } = await generateWithFallback(ai, {
+      contents: [{
+        role: "user",
+        parts: [
+          { inlineData: { mimeType: "application/pdf", data: base64 } },
+          { text: "Extract the certificate fields from this document." },
+        ],
+      }],
+      config: {
+        systemInstruction: CERT_SYSTEM,
+        responseMimeType: "application/json",
+        responseSchema: CERT_RESPONSE_SCHEMA,
+        temperature: 0,
+      },
+    });
     usedModel = model;
     inputTokens = res.usageMetadata?.promptTokenCount ?? null;
     outputTokens = res.usageMetadata?.candidatesTokenCount ?? null;
