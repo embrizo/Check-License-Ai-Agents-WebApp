@@ -11,7 +11,7 @@ const EnvSchema = z.object({
   RESEND_API_KEY: z.string().optional().transform((v) => (v ? v : undefined)),
   // Overrides mail/send.ts's DEFAULT_FROM_ADDRESS. This has changed hands
   // (env, not code) across sessions already — e.g. swapping to Resend's
-  // onboarding@resend.dev sandbox sender while mat.co.th isn't yet
+  // onboarding@resend.dev sandbox sender while licexpiry.com isn't yet
   // DKIM/SPF-verified — so it lives in env to avoid a redeploy each time.
   RESEND_FROM_ADDRESS: z.string().optional().transform((v) => (v ? v : undefined)),
   GEMINI_API_KEY: z.string().optional().transform((v) => (v ? v : undefined)),

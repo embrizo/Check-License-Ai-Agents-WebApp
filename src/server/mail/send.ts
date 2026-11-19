@@ -3,8 +3,8 @@ import { Resend } from "resend";
 import { getEnv } from "@/lib/env";
 
 // Overridable via RESEND_FROM_ADDRESS (docs/01 D8) — e.g. Resend's
-// onboarding@resend.dev sandbox sender while mat.co.th isn't yet verified.
-const DEFAULT_FROM_ADDRESS = "License Alerts <pattapon@mat.co.th>";
+// onboarding@resend.dev sandbox sender while licexpiry.com isn't yet verified.
+const DEFAULT_FROM_ADDRESS = "License Alerts <alerts@licexpiry.com>";
 
 export interface SendEmailInput {
   to: string[];
