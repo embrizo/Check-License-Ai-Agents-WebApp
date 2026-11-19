@@ -48,6 +48,29 @@ export function dedupKey(customerId: string, productName: string): string {
   return `${customerId}::${productName.toUpperCase()}`;
 }
 
+/**
+ * The base recipient list for an item, chosen by the department it is filed
+ * under: that department's recipients, or — for an item with no department
+ * (null) — the org-wide list. This is the routing rule that keeps one
+ * department's expiry alerts from reaching another's people.
+ *
+ * A department present but with an empty recipient list returns `[]`, NOT the
+ * org-wide list: a department whose recipients aren't configured yet should go
+ * quiet (and surface as a "no recipients" warning), not silently leak to the
+ * org-wide audience. Only a genuinely unfiled (null) item falls back to org-wide.
+ *
+ * Pure so the choice is unit-testable; dailyCheck owns loading each department's
+ * recipients into the map.
+ */
+export function baseRecipientsFor(
+  departmentId: string | null,
+  orgRecipients: string[],
+  departmentRecipients: Map<string, string[]>,
+): string[] {
+  if (departmentId === null) return orgRecipients;
+  return departmentRecipients.get(departmentId) ?? [];
+}
+
 export interface AlertRecipientsInput {
   /**
    * The base recipient list for this item: the recipients of the department it

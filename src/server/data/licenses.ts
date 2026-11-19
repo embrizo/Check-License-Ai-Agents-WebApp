@@ -16,13 +16,6 @@ export async function listLicenses(orgId: string, scope: DepartmentScope) {
     .where(and(eq(licenses.organizationId, orgId), departmentCondition(licenses.departmentId, scope)));
 }
 
-export async function getLicense(orgId: string, licenseId: string) {
-  const db = getDb();
-  const [row] = await db.select().from(licenses)
-    .where(and(eq(licenses.id, licenseId), eq(licenses.organizationId, orgId)));
-  return row ?? null;   // wrong tenant → null, indistinguishable from not-found
-}
-
 export async function getLicenseWithCustomer(orgId: string, licenseId: string, scope: DepartmentScope) {
   const db = getDb();
   const [row] = await db.select({ license: licenses, customerName: customers.name })

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { matchesProductFilter, selectThreshold, dedupKey, buildRecipients } from "../alertLogic";
+import { matchesProductFilter, selectThreshold, dedupKey, buildRecipients, baseRecipientsFor } from "../alertLogic";
 
 describe("matchesProductFilter", () => {
   it("matches everything when no regex is configured (docs/03 'null = all')", () => {
@@ -54,6 +54,34 @@ describe("dedupKey", () => {
 
   it("differs by customer even for the same product", () => {
     expect(dedupKey("cust-1", "nx11101")).not.toBe(dedupKey("cust-2", "nx11101"));
+  });
+});
+
+describe("baseRecipientsFor — per-department routing (the isolation guarantee)", () => {
+  const departmentRecipients = new Map<string, string[]>([
+    ["nx", ["ops.nx@example.com"]],
+    ["ptc", ["ops.ptc@example.com"]],
+    ["empty", []],
+  ]);
+  const orgRecipients = ["org-wide@example.com"];
+
+  it("routes a filed item to its OWN department's recipients, never another's or the org-wide list", () => {
+    expect(baseRecipientsFor("nx", orgRecipients, departmentRecipients)).toEqual(["ops.nx@example.com"]);
+    expect(baseRecipientsFor("ptc", orgRecipients, departmentRecipients)).toEqual(["ops.ptc@example.com"]);
+  });
+
+  it("falls back to the org-wide list only for an unfiled (null-department) item", () => {
+    expect(baseRecipientsFor(null, orgRecipients, departmentRecipients)).toEqual(["org-wide@example.com"]);
+  });
+
+  it("stays quiet (empty, not org-wide) for a department whose recipients aren't configured", () => {
+    // The department exists but has no recipients — must NOT leak to the
+    // org-wide audience; dailyCheck surfaces this as a "no recipients" warning.
+    expect(baseRecipientsFor("empty", orgRecipients, departmentRecipients)).toEqual([]);
+  });
+
+  it("returns empty for a department id missing from the map rather than the org-wide list", () => {
+    expect(baseRecipientsFor("ghost", orgRecipients, departmentRecipients)).toEqual([]);
   });
 });
 

@@ -9,7 +9,7 @@ import { hasAlertBeenSent, recordAlert } from "@/server/data/alertLog";
 import { isUniqueViolation } from "@/server/data/errors";
 import { startJobRun, finishJobRun, DAILY_CHECK } from "@/server/data/admin/jobRuns";
 import { daysRemaining, isSendHour } from "@/server/domain/thresholds";
-import { matchesProductFilter, selectThreshold, dedupKey, buildRecipients } from "@/server/domain/alertLogic";
+import { matchesProductFilter, selectThreshold, dedupKey, buildRecipients, baseRecipientsFor } from "@/server/domain/alertLogic";
 import { renderAlertEmail, renderCertAlertEmail } from "@/server/domain/alertTemplate";
 import { sendEmail } from "@/server/mail/send";
 import { pingHeartbeat } from "./heartbeat";
@@ -154,15 +154,12 @@ async function processOrg(orgId: string, now: Date, stats: DailyCheckStats, igno
     const productFilterRegex = settings?.productFilterRegex ?? null;
     const notifyCustomerContacts = settings?.notifyCustomerContacts ?? false;
 
-    // Per-department recipient lists. An item filed under a department emails
-    // that department's people (and no one else's); an item with no department
-    // falls back to the org-wide list — so adding departments never silently
-    // stops an unfiled license's alerts.
+    // Per-department recipient lists, keyed by department id. baseRecipientsFor
+    // (pure, in alertLogic) picks each item's list from this map or falls back
+    // to the org-wide list for an unfiled item.
     const departmentRecipients = new Map<string, string[]>(
       departments.map((dpt) => [dpt.id, dpt.alertRecipients]),
     );
-    const baseRecipientsFor = (departmentId: string | null): string[] =>
-      departmentId === null ? orgRecipients : (departmentRecipients.get(departmentId) ?? []);
 
     const contactsByCustomer = new Map<string, { email: string; notify: boolean }[]>();
     for (const c of contacts) {
@@ -202,7 +199,7 @@ async function processOrg(orgId: string, now: Date, stats: DailyCheckStats, igno
       }
 
       const recipients = buildRecipients({
-        baseRecipients: baseRecipientsFor(lic.departmentId),
+        baseRecipients: baseRecipientsFor(lic.departmentId, orgRecipients, departmentRecipients),
         customerContacts: contactsByCustomer.get(lic.customerId) ?? [],
         notifyCustomerContacts,
       });
@@ -279,7 +276,7 @@ async function processOrg(orgId: string, now: Date, stats: DailyCheckStats, igno
 
       const certLabel = `${cert.certType}${cert.holderName ? ` / ${cert.holderName}` : ""}`;
       const recipients = buildRecipients({
-        baseRecipients: baseRecipientsFor(cert.departmentId),
+        baseRecipients: baseRecipientsFor(cert.departmentId, orgRecipients, departmentRecipients),
         customerContacts: cert.customerId ? (contactsByCustomer.get(cert.customerId) ?? []) : [],
         notifyCustomerContacts,
       });
