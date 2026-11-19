@@ -60,7 +60,7 @@ describe("dedupKey", () => {
 describe("buildRecipients", () => {
   it("returns only org recipients when customer-contact notification is off", () => {
     const result = buildRecipients({
-      orgRecipients: ["ops@example.com"],
+      baseRecipients: ["ops@example.com"],
       customerContacts: [{ email: "buyer@acme.com", notify: true }],
       notifyCustomerContacts: false,
     });
@@ -69,7 +69,7 @@ describe("buildRecipients", () => {
 
   it("adds opted-in customer contacts when enabled", () => {
     const result = buildRecipients({
-      orgRecipients: ["ops@example.com"],
+      baseRecipients: ["ops@example.com"],
       customerContacts: [
         { email: "buyer@acme.com", notify: true },
         { email: "silent@acme.com", notify: false },
@@ -81,7 +81,7 @@ describe("buildRecipients", () => {
 
   it("de-duplicates a contact email already present in org recipients", () => {
     const result = buildRecipients({
-      orgRecipients: ["shared@example.com"],
+      baseRecipients: ["shared@example.com"],
       customerContacts: [{ email: "shared@example.com", notify: true }],
       notifyCustomerContacts: true,
     });
@@ -90,7 +90,7 @@ describe("buildRecipients", () => {
 
   it("de-duplicates case-insensitively — one person, one email", () => {
     const result = buildRecipients({
-      orgRecipients: ["Ops@Example.com"],
+      baseRecipients: ["Ops@Example.com"],
       customerContacts: [{ email: "ops@example.com", notify: true }],
       notifyCustomerContacts: true,
     });
@@ -102,7 +102,7 @@ describe("buildRecipients", () => {
   // it. Silence is the worst possible outcome for an expiry alerter.
   it("drops a malformed org recipient and still delivers to the valid ones", () => {
     const result = buildRecipients({
-      orgRecipients: ["ops@example.com", "ops@example", "  ", "finance@example.com"],
+      baseRecipients: ["ops@example.com", "ops@example", "  ", "finance@example.com"],
       customerContacts: [],
       notifyCustomerContacts: false,
     });
@@ -111,7 +111,7 @@ describe("buildRecipients", () => {
 
   it("drops a malformed customer contact without losing the rest", () => {
     const result = buildRecipients({
-      orgRecipients: ["ops@example.com"],
+      baseRecipients: ["ops@example.com"],
       customerContacts: [
         { email: "not-an-email", notify: true },
         { email: "buyer@acme.com", notify: true },
@@ -123,7 +123,7 @@ describe("buildRecipients", () => {
 
   it("returns an empty list when every configured address is malformed", () => {
     const result = buildRecipients({
-      orgRecipients: ["nope", "also@nope"],
+      baseRecipients: ["nope", "also@nope"],
       customerContacts: [],
       notifyCustomerContacts: false,
     });
@@ -132,7 +132,7 @@ describe("buildRecipients", () => {
 
   it("trims surrounding whitespace so a pasted address is still deliverable", () => {
     const result = buildRecipients({
-      orgRecipients: ["  ops@example.com  "],
+      baseRecipients: ["  ops@example.com  "],
       customerContacts: [],
       notifyCustomerContacts: false,
     });

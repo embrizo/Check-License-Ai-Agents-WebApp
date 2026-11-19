@@ -3,6 +3,7 @@ import { listActiveOrgIds } from "@/server/data/admin/subscriptions";
 import { listAlertCandidates } from "@/server/data/licenses";
 import { listCertAlertCandidates, hasCertAlertBeenSent, recordCertAlert } from "@/server/data/certificates";
 import { getOrgSettings } from "@/server/data/organizationSettings";
+import { listDepartments } from "@/server/data/departments";
 import { listContactsByOrg } from "@/server/data/contacts";
 import { hasAlertBeenSent, recordAlert } from "@/server/data/alertLog";
 import { isUniqueViolation } from "@/server/data/errors";
@@ -141,16 +142,27 @@ async function processOrg(orgId: string, now: Date, stats: DailyCheckStats, igno
     if (!ignoreSendHour && !isSendHour(settings?.alertSendHour ?? 8, timezone, now)) return;
     stats.orgsProcessed++;
 
-    const [candidates, certCandidates, contacts] = await Promise.all([
+    const [candidates, certCandidates, contacts, departments] = await Promise.all([
       listAlertCandidates(orgId),
       listCertAlertCandidates(orgId),
       listContactsByOrg(orgId),
+      listDepartments(orgId),
     ]);
 
     const thresholds = settings?.alertThresholds ?? [30, 15];
     const orgRecipients = settings?.alertRecipients ?? [];
     const productFilterRegex = settings?.productFilterRegex ?? null;
     const notifyCustomerContacts = settings?.notifyCustomerContacts ?? false;
+
+    // Per-department recipient lists. An item filed under a department emails
+    // that department's people (and no one else's); an item with no department
+    // falls back to the org-wide list — so adding departments never silently
+    // stops an unfiled license's alerts.
+    const departmentRecipients = new Map<string, string[]>(
+      departments.map((dpt) => [dpt.id, dpt.alertRecipients]),
+    );
+    const baseRecipientsFor = (departmentId: string | null): string[] =>
+      departmentId === null ? orgRecipients : (departmentRecipients.get(departmentId) ?? []);
 
     const contactsByCustomer = new Map<string, { email: string; notify: boolean }[]>();
     for (const c of contacts) {
@@ -190,7 +202,7 @@ async function processOrg(orgId: string, now: Date, stats: DailyCheckStats, igno
       }
 
       const recipients = buildRecipients({
-        orgRecipients,
+        baseRecipients: baseRecipientsFor(lic.departmentId),
         customerContacts: contactsByCustomer.get(lic.customerId) ?? [],
         notifyCustomerContacts,
       });
@@ -267,7 +279,7 @@ async function processOrg(orgId: string, now: Date, stats: DailyCheckStats, igno
 
       const certLabel = `${cert.certType}${cert.holderName ? ` / ${cert.holderName}` : ""}`;
       const recipients = buildRecipients({
-        orgRecipients,
+        baseRecipients: baseRecipientsFor(cert.departmentId),
         customerContacts: cert.customerId ? (contactsByCustomer.get(cert.customerId) ?? []) : [],
         notifyCustomerContacts,
       });

@@ -33,7 +33,10 @@ export default async function OrganizationDetailPage({
 
       <SubscriptionEditor orgId={id} subscription={subscription} />
 
-      <DepartmentManagement orgId={id} departments={deptOptions} />
+      <DepartmentManagement
+        orgId={id}
+        departments={departments.map((dpt) => ({ id: dpt.id, name: dpt.name, alertRecipients: dpt.alertRecipients }))}
+      />
 
       <UserManagement
         orgId={id}

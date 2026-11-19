@@ -49,14 +49,21 @@ export function dedupKey(customerId: string, productName: string): string {
 }
 
 export interface AlertRecipientsInput {
-  orgRecipients: string[];
+  /**
+   * The base recipient list for this item: the recipients of the department it
+   * is filed under, or — for an item with no department — the org-wide list.
+   * The caller (dailyCheck) picks which; this keeps one department's expiry
+   * alerts from reaching another's people.
+   */
+  baseRecipients: string[];
   customerContacts: { email: string; notify: boolean }[];
   notifyCustomerContacts: boolean;
 }
 
 /**
- * Org-wide recipients plus opted-in customer contacts, deduplicated
- * case-insensitively and filtered to addresses a mail provider will accept.
+ * Base recipients (the department's or the org-wide list) plus opted-in customer
+ * contacts, deduplicated case-insensitively and filtered to addresses a mail
+ * provider will accept.
  *
  * The filter is the important part. Resend rejects an entire send if any one
  * recipient is malformed, so without it a single typo'd address — in settings
@@ -67,7 +74,7 @@ export interface AlertRecipientsInput {
  * the form is the primary defence; this catches rows that predate it.
  */
 export function buildRecipients(input: AlertRecipientsInput): string[] {
-  const candidates = [...input.orgRecipients];
+  const candidates = [...input.baseRecipients];
   if (input.notifyCustomerContacts) {
     for (const contact of input.customerContacts) {
       if (contact.notify && contact.email) candidates.push(contact.email);

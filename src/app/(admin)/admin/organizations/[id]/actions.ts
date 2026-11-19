@@ -7,7 +7,8 @@ import { addMonths } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { requireOrgAccess } from "@/server/auth/guards";
 import { createUser, getUser, setUserActive, setUserRole, setUserDepartment } from "@/server/data/users";
-import { createDepartment, getDepartment } from "@/server/data/departments";
+import { createDepartment, getDepartment, setDepartmentRecipients } from "@/server/data/departments";
+import { isValidEmail } from "@/server/domain/email";
 import { createSetupToken } from "@/server/data/passwordSetupTokens";
 import {
   applyDemoPlan, extendSubscription, getActiveSubscription, setSubscriptionStatus,
@@ -181,6 +182,42 @@ export async function setUserDepartmentAction(orgId: string, userId: string, dep
     targetType: "user",
     targetId: userId,
     metadata: { departmentId },
+  });
+  revalidatePath(`/admin/organizations/${orgId}`);
+}
+
+/**
+ * Set a department's alert recipients from a free-text field (comma / newline /
+ * semicolon separated). Validates every address up front — Resend rejects a
+ * whole send if any one recipient is malformed, so a bad address must never
+ * reach the stored list. Deduplicates case-insensitively, preserving the first
+ * spelling. Returns void; runAction surfaces any throw.
+ */
+export async function setDepartmentRecipientsAction(orgId: string, departmentId: string, recipientsRaw: string) {
+  const { session } = await requireOrgAccess({ role: "super_admin" });
+
+  const emails = recipientsRaw.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean);
+  const bad = emails.filter((e) => !isValidEmail(e));
+  if (bad.length > 0) throw new Error(`Not a valid email address: ${bad.join(", ")}`);
+
+  const seen = new Set<string>();
+  const deduped = emails.filter((e) => {
+    const key = e.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const updated = await setDepartmentRecipients(orgId, departmentId, deduped);
+  if (!updated) throw new Error("That department doesn't belong to this organization.");
+
+  await recordAuditLog({
+    organizationId: orgId,
+    userId: session.user.id,
+    action: "department.recipients_change",
+    targetType: "department",
+    targetId: departmentId,
+    metadata: { count: deduped.length },
   });
   revalidatePath(`/admin/organizations/${orgId}`);
 }

@@ -31,3 +31,14 @@ export async function createDepartment(orgId: string, name: string) {
     .returning();
   return row ?? null;
 }
+
+/** Set a department's alert recipient list (the addresses its licenses'/certs'
+ *  expiry emails go to). Tenant-scoped. Returns the updated row, or null. */
+export async function setDepartmentRecipients(orgId: string, departmentId: string, recipients: string[]) {
+  const db = getDb();
+  const [row] = await db.update(departments)
+    .set({ alertRecipients: recipients })
+    .where(and(eq(departments.id, departmentId), eq(departments.organizationId, orgId)))
+    .returning();
+  return row ?? null;
+}
