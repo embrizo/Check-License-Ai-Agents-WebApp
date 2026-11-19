@@ -5,6 +5,7 @@ import { requireOrg } from "@/server/auth/guards";
 import type { Session } from "next-auth";
 import { guardErrorMessage } from "@/server/auth/actionError";
 import { getCustomer, createCustomer } from "@/server/data/customers";
+import { resolveWriteDepartment } from "@/server/auth/departmentScope";
 import { getLicenseFileByName, upsertLicenseFile, getLicenseFile, setLicenseFileParseError } from "@/server/data/licenseFiles";
 import { upsertLicensesForFile, upsertAiLicensesForFile } from "@/server/data/licenses";
 import { hashContent } from "@/server/domain/hashing";
@@ -202,8 +203,9 @@ export type QuickCreateCustomerState =
 
 export async function quickCreateCustomer(name: string): Promise<QuickCreateCustomerState> {
   let orgId: string;
+  let deptScope: Awaited<ReturnType<typeof requireOrg>>["deptScope"];
   try {
-    ({ orgId } = await requireOrg({ write: true }));
+    ({ orgId, deptScope } = await requireOrg({ write: true }));
   } catch (err) {
     const message = guardErrorMessage(err);
     if (message) return { ok: false, error: message };
@@ -213,7 +215,12 @@ export async function quickCreateCustomer(name: string): Promise<QuickCreateCust
   const trimmed = name.trim();
   if (!trimmed) return { ok: false, error: "Enter a customer name." };
 
-  const customer = await createCustomer(orgId, trimmed);
+  // File it into the creator's department (a scoped member → their own; an
+  // org_admin → unfiled). Without this the new customer lands department=null and
+  // a member's own department-scoped list/getCustomer can't see it — the Select
+  // then shows the raw id and the follow-up upload fails.
+  const departmentId = resolveWriteDepartment(deptScope, null);
+  const customer = await createCustomer(orgId, trimmed, departmentId);
   if (!customer) return { ok: false, error: `You already have a customer called "${trimmed}".` };
 
   revalidatePath("/uploads");

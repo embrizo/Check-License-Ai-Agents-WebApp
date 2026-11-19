@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { uploadLicenseFiles, quickCreateCustomer, tryAiParseAction, type UploadState } from "./actions";
@@ -64,6 +64,15 @@ export function UploadForm({ customers }: { customers: { id: string; name: strin
   const [isCreating, startCreating] = useTransition();
   const router = useRouter();
 
+  // Customers just created via quick-add, shown optimistically until router.refresh()
+  // folds them into the `customers` prop. Without this the Select's value points at
+  // an id not yet in its options for a beat, and Radix renders the raw id.
+  const [added, setAdded] = useState<{ id: string; name: string }[]>([]);
+  const allCustomers = useMemo(() => {
+    const seen = new Set(customers.map((c) => c.id));
+    return [...customers, ...added.filter((a) => !seen.has(a.id))];
+  }, [customers, added]);
+
   function handleAddCustomer() {
     const name = newCustomerName.trim();
     if (!name) return;
@@ -71,6 +80,7 @@ export function UploadForm({ customers }: { customers: { id: string; name: strin
       try {
         const result = await quickCreateCustomer(name);
         if (result.ok) {
+          setAdded((prev) => [...prev, { id: result.id, name: result.name }]);
           setCustomerId(result.id);
           setNewCustomerName("");
           toast.success(`Customer "${result.name}" created.`);
@@ -90,13 +100,13 @@ export function UploadForm({ customers }: { customers: { id: string; name: strin
         <CardContent className="flex flex-col gap-4 pt-6">
           <div className="flex flex-col gap-2">
             <Label>{u.customer}</Label>
-            {customers.length > 0 ? (
+            {allCustomers.length > 0 ? (
               <Select value={customerId} onValueChange={(value) => setCustomerId(value ?? "")}>
                 <SelectTrigger>
                   <SelectValue placeholder={u.chooseCustomer} />
                 </SelectTrigger>
                 <SelectContent>
-                  {customers.map((c) => (
+                  {allCustomers.map((c) => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
