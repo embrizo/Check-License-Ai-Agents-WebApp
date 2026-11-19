@@ -1,7 +1,7 @@
 import "server-only";
 import { and, count, eq, notExists } from "drizzle-orm";
 import { getDb } from "@/db";
-import { customers, licenses, licenseFiles } from "@/db/schema";
+import { customers, licenses, licenseFiles, certificates } from "@/db/schema";
 import { departmentCondition, type DepartmentScope } from "@/server/auth/departmentScope";
 
 // `scope` is a required parameter on every member-facing read: it forces each
@@ -56,11 +56,12 @@ export async function createCustomer(orgId: string, name: string, departmentId: 
 
 /**
  * Move a customer to a department (or clear it with null), cascading the same
- * department_id onto every license and license_file denormalized under it, so
- * the access-control columns stay consistent (a member of the new department
- * sees the customer's licenses; a member of the old one stops). Tenant-scoped:
- * a customerId from another org updates nothing. Returns the updated customer,
- * or null if it wasn't this org's.
+ * department_id onto every license, license_file and certificate denormalized
+ * under it, so the access-control columns stay consistent (a member of the new
+ * department sees the customer's licenses/certs; a member of the old one stops,
+ * and the daily cron routes their alerts to the new department's recipients).
+ * Tenant-scoped: a customerId from another org updates nothing. Returns the
+ * updated customer, or null if it wasn't this org's.
  */
 export async function setCustomerDepartment(orgId: string, customerId: string, departmentId: string | null) {
   const db = getDb();
@@ -70,10 +71,16 @@ export async function setCustomerDepartment(orgId: string, customerId: string, d
     .returning();
   if (!row) return null;
 
-  await db.update(licenses).set({ departmentId })
-    .where(and(eq(licenses.organizationId, orgId), eq(licenses.customerId, customerId)));
-  await db.update(licenseFiles).set({ departmentId })
-    .where(and(eq(licenseFiles.organizationId, orgId), eq(licenseFiles.customerId, customerId)));
+  // The three denormalized children, updated in parallel — none depends on
+  // another, and the owning customer row is already confirmed above.
+  await Promise.all([
+    db.update(licenses).set({ departmentId })
+      .where(and(eq(licenses.organizationId, orgId), eq(licenses.customerId, customerId))),
+    db.update(licenseFiles).set({ departmentId })
+      .where(and(eq(licenseFiles.organizationId, orgId), eq(licenseFiles.customerId, customerId))),
+    db.update(certificates).set({ departmentId })
+      .where(and(eq(certificates.organizationId, orgId), eq(certificates.customerId, customerId))),
+  ]);
   return row;
 }
 

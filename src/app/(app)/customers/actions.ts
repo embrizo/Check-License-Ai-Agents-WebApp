@@ -132,8 +132,9 @@ export async function addContactAction(
   formData: FormData,
 ): Promise<CustomerFormState> {
   let orgId: string;
+  let deptScope: Awaited<ReturnType<typeof requireOrg>>["deptScope"];
   try {
-    ({ orgId } = await requireOrg({ write: true }));
+    ({ orgId, deptScope } = await requireOrg({ write: true }));
   } catch (err) {
     const message = guardErrorMessage(err);
     if (message) return { error: message };
@@ -152,7 +153,7 @@ export async function addContactAction(
   const notify = formData.get("notify") === "on";
 
   try {
-    const contact = await createContact(orgId, customerId, { email, name, notify });
+    const contact = await createContact(orgId, customerId, { email, name, notify }, deptScope);
     if (!contact) return { error: "That customer doesn't belong to your organization." };
   } catch (err) {
     if (isUniqueViolation(err, "uq_contact_customer_email")) {
@@ -167,8 +168,8 @@ export async function addContactAction(
 
 export async function deleteContactAction(customerId: string, contactId: string) {
   try {
-    const { orgId } = await requireOrg({ write: true });
-    await deleteContact(orgId, contactId);
+    const { orgId, deptScope } = await requireOrg({ write: true });
+    await deleteContact(orgId, contactId, deptScope);
   } catch (err) {
     const message = guardErrorMessage(err);
     if (message) return { error: message };

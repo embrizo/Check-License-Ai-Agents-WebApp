@@ -39,7 +39,7 @@ export default async function CustomerDetailPage({
 
   const [settings, contacts, files, licenses] = await Promise.all([
     getOrgSettings(orgId),
-    listContacts(orgId, id),
+    listContacts(orgId, id, deptScope),
     listLicenseFiles(orgId, deptScope, id),
     listLicensesByCustomer(orgId, id, deptScope),
   ]);
