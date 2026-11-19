@@ -18,11 +18,11 @@ const AMBER_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: {
 const GREEN_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
 
 export async function GET() {
-  const { orgId } = await requireOrg();
+  const { orgId, deptScope } = await requireOrg();
 
   const [settings, licenses, alerts] = await Promise.all([
     getOrgSettings(orgId),
-    listLicensesWithCustomer(orgId),
+    listLicensesWithCustomer(orgId, deptScope),
     listAlertsForOrg(orgId),
   ]);
   const timezone = settings?.timezone ?? "Asia/Bangkok";

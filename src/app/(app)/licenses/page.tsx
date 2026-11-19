@@ -36,7 +36,7 @@ export default async function LicensesPage({
 }: {
   searchParams: Promise<{ q?: string; bucket?: string; sort?: string; dir?: string; group?: string }>;
 }) {
-  const { orgId } = await requireOrg();
+  const { orgId, deptScope } = await requireOrg();
   const { dict } = await getI18n();
   const d = dict.licenses;
   const params = await searchParams;
@@ -48,7 +48,7 @@ export default async function LicensesPage({
 
   const [settings, licenses] = await Promise.all([
     getOrgSettings(orgId),
-    listLicensesWithCustomer(orgId),
+    listLicensesWithCustomer(orgId, deptScope),
   ]);
   const timezone = settings?.timezone ?? "Asia/Bangkok";
 

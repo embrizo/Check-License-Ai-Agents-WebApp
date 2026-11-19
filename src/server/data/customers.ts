@@ -2,28 +2,39 @@ import "server-only";
 import { and, count, eq, notExists } from "drizzle-orm";
 import { getDb } from "@/db";
 import { customers, licenses } from "@/db/schema";
+import { departmentCondition, type DepartmentScope } from "@/server/auth/departmentScope";
 
-export async function listCustomers(orgId: string) {
+// `scope` is a required parameter on every member-facing read: it forces each
+// call site to pass the caller's DepartmentScope (from requireOrgAccess), so a
+// query can never silently run unfiltered. Pass { all: true } for the genuinely
+// cross-department cases (super_admin, the cron).
+
+export async function listCustomers(orgId: string, scope: DepartmentScope) {
   const db = getDb();
-  return db.select().from(customers).where(eq(customers.organizationId, orgId));
+  return db.select().from(customers)
+    .where(and(eq(customers.organizationId, orgId), departmentCondition(customers.departmentId, scope)));
 }
 
-export async function listCustomersWithLicenseCounts(orgId: string) {
+export async function listCustomersWithLicenseCounts(orgId: string, scope: DepartmentScope) {
   const db = getDb();
   const rows = await db.select({
     customer: customers,
     licenseCount: count(licenses.id),
   }).from(customers)
     .leftJoin(licenses, eq(licenses.customerId, customers.id))
-    .where(eq(customers.organizationId, orgId))
+    .where(and(eq(customers.organizationId, orgId), departmentCondition(customers.departmentId, scope)))
     .groupBy(customers.id);
   return rows.map((r) => ({ ...r.customer, licenseCount: r.licenseCount }));
 }
 
-export async function getCustomer(orgId: string, customerId: string) {
+export async function getCustomer(orgId: string, customerId: string, scope: DepartmentScope) {
   const db = getDb();
   const [row] = await db.select().from(customers)
-    .where(and(eq(customers.id, customerId), eq(customers.organizationId, orgId)));
+    .where(and(
+      eq(customers.id, customerId),
+      eq(customers.organizationId, orgId),
+      departmentCondition(customers.departmentId, scope),
+    ));
   return row ?? null;
 }
 

@@ -57,6 +57,13 @@
       "when": 1794978335452,
       "tag": "0007_loud_riptide",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795078719134,
+      "tag": "0008_flowery_bruce_banner",
+      "breakpoints": true
     }
   ]
 }

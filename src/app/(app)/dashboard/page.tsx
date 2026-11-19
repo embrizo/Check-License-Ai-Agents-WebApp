@@ -8,7 +8,7 @@ import { getI18n } from "@/i18n/server";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
 export default async function DashboardPage() {
-  const { session, orgId } = await requireOrgAccess();
+  const { session, orgId, deptScope } = await requireOrgAccess();
   const { dict } = await getI18n();
 
   if (!orgId) {
@@ -29,8 +29,8 @@ export default async function DashboardPage() {
 
   const [settings, licenses, certs] = await Promise.all([
     getOrgSettings(orgId),
-    listLicenses(orgId),
-    listCertificatesWithCustomer(orgId),
+    listLicenses(orgId, deptScope),
+    listCertificatesWithCustomer(orgId, deptScope),
   ]);
   const timezone = settings?.timezone ?? "Asia/Bangkok";
 

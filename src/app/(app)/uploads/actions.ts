@@ -32,8 +32,9 @@ export type UploadState = { results: UploadFileResult[]; error?: string } | unde
 export async function uploadLicenseFiles(_prevState: UploadState, formData: FormData): Promise<UploadState> {
   let orgId: string;
   let session: Session;
+  let deptScope: Awaited<ReturnType<typeof requireOrg>>["deptScope"];
   try {
-    ({ orgId, session } = await requireOrg({ write: true }));
+    ({ orgId, session, deptScope } = await requireOrg({ write: true }));
   } catch (err) {
     const message = guardErrorMessage(err);
     if (message) return { results: [], error: message };
@@ -43,7 +44,7 @@ export async function uploadLicenseFiles(_prevState: UploadState, formData: Form
   const customerId = formData.get("customerId") as string | null;
   if (!customerId) return { results: [], error: "Choose a customer first." };
 
-  const customer = await getCustomer(orgId, customerId);
+  const customer = await getCustomer(orgId, customerId, deptScope);
   if (!customer) return { results: [], error: "That customer doesn't belong to your organization." };
 
   const files = formData.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
@@ -158,14 +159,14 @@ export type AiParseState =
  * confirms them (docs/05 rule 2).
  */
 export async function tryAiParseAction(licenseFileId: string): Promise<AiParseState> {
-  const { orgId, session } = await requireOrg({ write: true });
+  const { orgId, session, deptScope } = await requireOrg({ write: true });
 
   const settings = await getOrgSettings(orgId);
   if (settings?.aiEnabled === false) {
     return { ok: false, error: "AI features are disabled for this organization." };
   }
 
-  const file = await getLicenseFile(orgId, licenseFileId);
+  const file = await getLicenseFile(orgId, licenseFileId, deptScope);
   if (!file) return { ok: false, error: "File not found." };
 
   try {

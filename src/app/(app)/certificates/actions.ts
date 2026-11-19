@@ -8,6 +8,7 @@ import {
   type CertificateInput,
 } from "@/server/data/certificates";
 import { getCustomer } from "@/server/data/customers";
+import type { DepartmentScope } from "@/server/auth/departmentScope";
 import { getOrgSettings } from "@/server/data/organizationSettings";
 import { recordAuditLog } from "@/server/data/admin/auditLog";
 import { isValidDateString, type CertCategory } from "@/server/domain/certificates";
@@ -40,8 +41,9 @@ export type CertSuggestState =
 export async function suggestCertificateFromPdf(formData: FormData): Promise<CertSuggestState> {
   let orgId: string;
   let session: Awaited<ReturnType<typeof requireOrg>>["session"];
+  let deptScope: Awaited<ReturnType<typeof requireOrg>>["deptScope"];
   try {
-    ({ orgId, session } = await requireOrg({ write: true }));
+    ({ orgId, session, deptScope } = await requireOrg({ write: true }));
   } catch (err) {
     const message = guardErrorMessage(err);
     if (message) return { ok: false, error: message };
@@ -100,7 +102,7 @@ export async function suggestCertificateFromPdf(formData: FormData): Promise<Cer
  * returns a user-facing error string. Pure server-side gate: the client form's
  * presets and auto-fill are convenience only — nothing here trusts them.
  */
-async function parseForm(orgId: string, formData: FormData): Promise<CertificateInput | { error: string }> {
+async function parseForm(orgId: string, deptScope: DepartmentScope, formData: FormData): Promise<CertificateInput | { error: string }> {
   const category = formData.get("category") as string | null;
   if (category !== "personal" && category !== "inspection") {
     return { error: "Choose a certificate category." };
@@ -127,7 +129,7 @@ async function parseForm(orgId: string, formData: FormData): Promise<Certificate
 
   let customerId = (formData.get("customerId") as string | null)?.trim() || null;
   if (customerId) {
-    const customer = await getCustomer(orgId, customerId);
+    const customer = await getCustomer(orgId, customerId, deptScope);
     if (!customer) return { error: "That site/customer doesn't belong to your organization." };
     customerId = customer.id;
   }
@@ -154,15 +156,16 @@ export async function createCertificateAction(
 ): Promise<CertFormState> {
   let orgId: string;
   let session: Awaited<ReturnType<typeof requireOrg>>["session"];
+  let deptScope: Awaited<ReturnType<typeof requireOrg>>["deptScope"];
   try {
-    ({ orgId, session } = await requireOrg({ write: true }));
+    ({ orgId, session, deptScope } = await requireOrg({ write: true }));
   } catch (err) {
     const message = guardErrorMessage(err);
     if (message) return { error: message };
     throw err;
   }
 
-  const parsed = await parseForm(orgId, formData);
+  const parsed = await parseForm(orgId, deptScope, formData);
   if ("error" in parsed) return { error: parsed.error };
 
   const created = await createCertificate(orgId, session.user.id, parsed);
@@ -188,15 +191,16 @@ export async function updateCertificateAction(
 ): Promise<CertFormState> {
   let orgId: string;
   let session: Awaited<ReturnType<typeof requireOrg>>["session"];
+  let deptScope: Awaited<ReturnType<typeof requireOrg>>["deptScope"];
   try {
-    ({ orgId, session } = await requireOrg({ write: true }));
+    ({ orgId, session, deptScope } = await requireOrg({ write: true }));
   } catch (err) {
     const message = guardErrorMessage(err);
     if (message) return { error: message };
     throw err;
   }
 
-  const parsed = await parseForm(orgId, formData);
+  const parsed = await parseForm(orgId, deptScope, formData);
   if ("error" in parsed) return { error: parsed.error };
 
   const updated = await updateCertificate(orgId, certId, parsed);
@@ -219,15 +223,16 @@ export async function updateCertificateAction(
 export async function deleteCertificateAction(certId: string): Promise<CertFormState> {
   let orgId: string;
   let session: Awaited<ReturnType<typeof requireOrg>>["session"];
+  let deptScope: Awaited<ReturnType<typeof requireOrg>>["deptScope"];
   try {
-    ({ orgId, session } = await requireOrg({ write: true }));
+    ({ orgId, session, deptScope } = await requireOrg({ write: true }));
   } catch (err) {
     const message = guardErrorMessage(err);
     if (message) return { error: message };
     throw err;
   }
 
-  const cert = await getCertificate(orgId, certId);
+  const cert = await getCertificate(orgId, certId, deptScope);
   if (!cert) return { error: "That certificate doesn't belong to your organization." };
 
   const deleted = await deleteCertificate(orgId, certId);

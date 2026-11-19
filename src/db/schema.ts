@@ -25,9 +25,39 @@ export const organizations = pgTable("organizations", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+/**
+ * A department is a slice of an organization whose data (customers, licenses,
+ * files, certificates) and alert recipients are kept apart from the rest — e.g.
+ * MAT's "NX" side vs its "PTC" side. A `member` is scoped to one department and
+ * only ever sees its data; `org_admin`/`super_admin` see every department.
+ *
+ * `departmentId` is nullable everywhere it appears: null means "not filed under
+ * any department", which is both the pre-departments legacy state and the
+ * org-wide default. A member with a null departmentId therefore sees only
+ * null-department (unfiled) data — never another department's.
+ */
+export const departments = pgTable("departments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  // Per-department alert recipients — a department's license/cert expiry emails
+  // go here, so one department's alerts never reach another's people. Wired in
+  // Phase 3 (routing); empty until then. Chosen over user-account recipients so
+  // a recipient need not be an app login.
+  alertRecipients: jsonb("alert_recipients").$type<string[]>().notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  uq: uniqueIndex("uq_department_org_name").on(t.organizationId, t.name),
+  orgIdx: index("ix_departments_org").on(t.organizationId),
+}));
+
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  // Which department this user is confined to. null = every department (the
+  // org_admin/super_admin case) OR an unassigned member (sees only unfiled data).
+  departmentId: uuid("department_id").references(() => departments.id, { onDelete: "set null" }),
   email: text("email").notNull(),
   name: text("name"),
   passwordHash: text("password_hash").notNull(),
@@ -66,11 +96,15 @@ export const customers = pgTable("customers", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id").notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
+  // The department this customer (and, denormalized, its licenses/files) belongs
+  // to. null = unfiled / org-wide. See `departments`.
+  departmentId: uuid("department_id").references(() => departments.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   // name is unique per ORG, not globally — the key multi-tenant change
   uq: uniqueIndex("uq_customer_org_name").on(t.organizationId, t.name),
+  deptIdx: index("ix_customers_dept").on(t.departmentId),
 }));
 
 export const contacts = pgTable("contacts", {
@@ -88,6 +122,9 @@ export const licenseFiles = pgTable("license_files", {
     .references(() => organizations.id, { onDelete: "cascade" }),
   customerId: uuid("customer_id").notNull()
     .references(() => customers.id, { onDelete: "cascade" }),
+  // Denormalized from the owning customer at upload time so every access-control
+  // read is a single-column filter (no join to forget). See `departments`.
+  departmentId: uuid("department_id").references(() => departments.id, { onDelete: "set null" }),
   filename: text("filename").notNull(),
   content: text("content").notNull(),          // raw file text — D5
   contentHash: text("content_hash").notNull(), // sha256, replaces file_hash
@@ -117,6 +154,9 @@ export const licenses = pgTable("licenses", {
     .references(() => organizations.id, { onDelete: "cascade" }),
   customerId: uuid("customer_id").notNull()
     .references(() => customers.id, { onDelete: "cascade" }),
+  // Denormalized from the owning customer (D4-style app-level scoping) so every
+  // member-facing read filters on one column. See `departments`.
+  departmentId: uuid("department_id").references(() => departments.id, { onDelete: "set null" }),
   licenseFileId: uuid("license_file_id").notNull()
     .references(() => licenseFiles.id, { onDelete: "cascade" }),
   productName: text("product_name").notNull(),
@@ -143,6 +183,7 @@ export const licenses = pgTable("licenses", {
   uq: unique("uq_license_file_product_key").on(t.licenseFileId, t.productName, t.licenseKey).nullsNotDistinct(),
   expIdx: index("ix_licenses_org_expire").on(t.organizationId, t.expireDate),
   custIdx: index("ix_licenses_customer").on(t.customerId),
+  deptIdx: index("ix_licenses_dept").on(t.departmentId),
 }));
 
 export const alertLog = pgTable("alert_log", {
@@ -178,6 +219,9 @@ export const certificates = pgTable("certificates", {
   // Optional grouping by site/company. `set null` (not cascade): deleting a
   // customer must never silently erase a safety cert's expiry history.
   customerId: uuid("customer_id").references(() => customers.id, { onDelete: "set null" }),
+  // Department this cert is filed under (certs can exist without a customer, so
+  // this is set directly, not derived). null = unfiled. See `departments`.
+  departmentId: uuid("department_id").references(() => departments.id, { onDelete: "set null" }),
   category: certCategory("category").notNull().default("personal"),
   certType: text("cert_type").notNull(),          // e.g. "ที่อับอากาศ", "ตรวจไฟฟ้า"
   holderName: text("holder_name"),                 // person for `personal`; null for `inspection`
@@ -195,6 +239,7 @@ export const certificates = pgTable("certificates", {
 }, (t) => ({
   expIdx: index("ix_certs_org_expire").on(t.organizationId, t.expireDate),
   orgIdx: index("ix_certs_org").on(t.organizationId),
+  deptIdx: index("ix_certs_dept").on(t.departmentId),
 }));
 
 /**

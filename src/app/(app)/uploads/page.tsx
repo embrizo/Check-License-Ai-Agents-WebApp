@@ -4,9 +4,9 @@ import { getI18n } from "@/i18n/server";
 import { UploadForm } from "./upload-form";
 
 export default async function UploadsPage() {
-  const { orgId } = await requireOrg();
+  const { orgId, deptScope } = await requireOrg();
   const { dict } = await getI18n();
-  const customers = await listCustomers(orgId);
+  const customers = await listCustomers(orgId, deptScope);
 
   return (
     <div className="max-w-2xl space-y-6">

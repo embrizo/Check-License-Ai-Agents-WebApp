@@ -2,12 +2,18 @@ import "server-only";
 import { and, eq, isNotNull, notInArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { licenses, customers } from "@/db/schema";
+import { departmentCondition, type DepartmentScope } from "@/server/auth/departmentScope";
 import type { ParsedLicense } from "@/server/domain/parsers/flexlm";
 import type { AiParsedLicense } from "@/server/ai/gemini";
 
-export async function listLicenses(orgId: string) {
+// `scope` is required on every member-facing read (see customers.ts) — filters on
+// the denormalized licenses.department_id, so these never join customers just to
+// enforce access. Cross-department callers (cron, super_admin) pass { all: true }.
+
+export async function listLicenses(orgId: string, scope: DepartmentScope) {
   const db = getDb();
-  return db.select().from(licenses).where(eq(licenses.organizationId, orgId));
+  return db.select().from(licenses)
+    .where(and(eq(licenses.organizationId, orgId), departmentCondition(licenses.departmentId, scope)));
 }
 
 export async function getLicense(orgId: string, licenseId: string) {
@@ -17,24 +23,29 @@ export async function getLicense(orgId: string, licenseId: string) {
   return row ?? null;   // wrong tenant → null, indistinguishable from not-found
 }
 
-export async function getLicenseWithCustomer(orgId: string, licenseId: string) {
+export async function getLicenseWithCustomer(orgId: string, licenseId: string, scope: DepartmentScope) {
   const db = getDb();
   const [row] = await db.select({ license: licenses, customerName: customers.name })
     .from(licenses)
     .innerJoin(customers, eq(licenses.customerId, customers.id))
-    .where(and(eq(licenses.id, licenseId), eq(licenses.organizationId, orgId)));
+    .where(and(
+      eq(licenses.id, licenseId),
+      eq(licenses.organizationId, orgId),
+      departmentCondition(licenses.departmentId, scope),
+    ));
   return row ? { ...row.license, customerName: row.customerName } : null;
 }
 
 /** Small org-sized datasets (D12) — filter/sort in the page, not here. */
-export async function listLicensesWithCustomer(orgId: string) {
+export async function listLicensesWithCustomer(orgId: string, scope: DepartmentScope) {
   const db = getDb();
   const rows = await db.select({
     license: licenses,
     customerName: customers.name,
   }).from(licenses)
     .innerJoin(customers, eq(licenses.customerId, customers.id))
-    .where(eq(licenses.organizationId, orgId));
+    .where(and(eq(licenses.organizationId, orgId), departmentCondition(licenses.departmentId, scope)))
+  ;
   return rows.map((r) => ({ ...r.license, customerName: r.customerName }));
 }
 
@@ -57,10 +68,14 @@ export async function listAlertCandidates(orgId: string) {
   return rows.map((r) => ({ ...r.license, customerName: r.customerName }));
 }
 
-export async function listLicensesByCustomer(orgId: string, customerId: string) {
+export async function listLicensesByCustomer(orgId: string, customerId: string, scope: DepartmentScope) {
   const db = getDb();
   return db.select().from(licenses)
-    .where(and(eq(licenses.organizationId, orgId), eq(licenses.customerId, customerId)));
+    .where(and(
+      eq(licenses.organizationId, orgId),
+      eq(licenses.customerId, customerId),
+      departmentCondition(licenses.departmentId, scope),
+    ));
 }
 
 /**

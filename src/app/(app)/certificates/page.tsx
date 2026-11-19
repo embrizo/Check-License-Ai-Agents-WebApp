@@ -27,7 +27,7 @@ export default async function CertificatesPage({
 }: {
   searchParams: Promise<{ q?: string; filter?: string }>;
 }) {
-  const { orgId } = await requireOrg();
+  const { orgId, deptScope } = await requireOrg();
   const { dict } = await getI18n();
   const d = dict.certificates;
   const params = await searchParams;
@@ -36,8 +36,8 @@ export default async function CertificatesPage({
 
   const [settings, certs, customers] = await Promise.all([
     getOrgSettings(orgId),
-    listCertificatesWithCustomer(orgId),
-    listCustomers(orgId),
+    listCertificatesWithCustomer(orgId, deptScope),
+    listCustomers(orgId, deptScope),
   ]);
   const timezone = settings?.timezone ?? "Asia/Bangkok";
   const customerOptions = customers.map((c) => ({ id: c.id, name: c.name }));

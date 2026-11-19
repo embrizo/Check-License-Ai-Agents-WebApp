@@ -2,6 +2,7 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { certificates, certAlertLog, customers } from "@/db/schema";
+import { departmentCondition, type DepartmentScope } from "@/server/auth/departmentScope";
 import type { CertCategory } from "@/server/domain/certificates";
 
 export interface CertificateInput {
@@ -16,23 +17,28 @@ export interface CertificateInput {
   customerId: string | null;
 }
 
-/** Small org-sized datasets (D12) — filter/sort in the page, not here. */
-export async function listCertificatesWithCustomer(orgId: string) {
+/** Small org-sized datasets (D12) — filter/sort in the page, not here. `scope`
+ *  required (see customers.ts); certs carry their own department_id. */
+export async function listCertificatesWithCustomer(orgId: string, scope: DepartmentScope) {
   const db = getDb();
   const rows = await db.select({
     cert: certificates,
     customerName: customers.name,
   }).from(certificates)
     .leftJoin(customers, eq(certificates.customerId, customers.id))
-    .where(eq(certificates.organizationId, orgId));
+    .where(and(eq(certificates.organizationId, orgId), departmentCondition(certificates.departmentId, scope)));
   return rows.map((r) => ({ ...r.cert, customerName: r.customerName }));
 }
 
-export async function getCertificate(orgId: string, certId: string) {
+export async function getCertificate(orgId: string, certId: string, scope: DepartmentScope) {
   const db = getDb();
   const [row] = await db.select().from(certificates)
-    .where(and(eq(certificates.id, certId), eq(certificates.organizationId, orgId)));
-  return row ?? null;   // wrong tenant → null, indistinguishable from not-found
+    .where(and(
+      eq(certificates.id, certId),
+      eq(certificates.organizationId, orgId),
+      departmentCondition(certificates.departmentId, scope),
+    ));
+  return row ?? null;   // wrong tenant/department → null, indistinguishable from not-found
 }
 
 export async function createCertificate(

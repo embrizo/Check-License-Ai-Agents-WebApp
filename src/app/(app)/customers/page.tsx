@@ -9,10 +9,10 @@ import {
 } from "@/components/ui/table";
 
 export default async function CustomersPage() {
-  const { orgId } = await requireOrg();
+  const { orgId, deptScope } = await requireOrg();
   const { dict } = await getI18n();
   const d = dict.customers;
-  const customers = await listCustomersWithLicenseCounts(orgId);
+  const customers = await listCustomersWithLicenseCounts(orgId, deptScope);
 
   return (
     <div className="space-y-6">

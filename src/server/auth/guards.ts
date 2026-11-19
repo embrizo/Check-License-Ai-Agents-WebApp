@@ -4,6 +4,7 @@ import { auth } from "@/server/auth";
 import { getUserById } from "@/server/data/users";
 import { checkAccess } from "./subscription";
 import { roleAtLeast } from "./role";
+import { departmentScopeFor } from "./departmentScope";
 import { ForbiddenError, SubscriptionError } from "./errors";
 import type { UserRole } from "@/db/schema";
 
@@ -53,8 +54,13 @@ export async function requireOrgAccess(opts?: { role?: UserRole; write?: boolean
     },
   };
 
+  // Which departments this caller may see. org_admin/super_admin → all; a member
+  // → only their own. Threaded into data-layer reads the same way orgId is, so
+  // one member can't read another department's licenses/customers/certs.
+  const deptScope = departmentScopeFor(user);
+
   if (user.role === "super_admin") {
-    return { session: fresh, orgId: null as string | null, user };
+    return { session: fresh, orgId: null as string | null, user, deptScope };
   }
 
   const orgId = user.organizationId;
@@ -69,7 +75,7 @@ export async function requireOrgAccess(opts?: { role?: UserRole; write?: boolean
     if (!access.ok) throw new SubscriptionError(access.reason);
   }
 
-  return { session: fresh, orgId, user };
+  return { session: fresh, orgId, user, deptScope };
 }
 
 /**
@@ -89,7 +95,7 @@ export async function getCurrentUser() {
 
 /** Variant for entry points that must always be scoped to a real org (never super_admin's null). */
 export async function requireOrg(opts?: { role?: UserRole; write?: boolean }) {
-  const { session, orgId, user } = await requireOrgAccess(opts);
+  const { session, orgId, user, deptScope } = await requireOrgAccess(opts);
   if (!orgId) throw new ForbiddenError();
-  return { session, orgId, user };
+  return { session, orgId, user, deptScope };
 }

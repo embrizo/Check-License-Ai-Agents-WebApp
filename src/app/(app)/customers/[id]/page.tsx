@@ -32,16 +32,16 @@ export default async function CustomerDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { orgId } = await requireOrg();
+  const { orgId, deptScope } = await requireOrg();
 
-  const customer = await getCustomer(orgId, id);
+  const customer = await getCustomer(orgId, id, deptScope);
   if (!customer) notFound();
 
   const [settings, contacts, files, licenses] = await Promise.all([
     getOrgSettings(orgId),
     listContacts(orgId, id),
-    listLicenseFiles(orgId, id),
-    listLicensesByCustomer(orgId, id),
+    listLicenseFiles(orgId, deptScope, id),
+    listLicensesByCustomer(orgId, id, deptScope),
   ]);
   const timezone = settings?.timezone ?? "Asia/Bangkok";
 

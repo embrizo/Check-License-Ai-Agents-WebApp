@@ -22,8 +22,9 @@ export type CustomerFormState = { error?: string; success?: boolean } | undefine
 export async function deleteCustomerAction(customerId: string): Promise<CustomerFormState> {
   let orgId: string;
   let session: Awaited<ReturnType<typeof requireOrg>>["session"];
+  let deptScope: Awaited<ReturnType<typeof requireOrg>>["deptScope"];
   try {
-    ({ orgId, session } = await requireOrg({ write: true }));
+    ({ orgId, session, deptScope } = await requireOrg({ write: true }));
   } catch (err) {
     const message = guardErrorMessage(err);
     if (message) return { error: message };
@@ -34,7 +35,7 @@ export async function deleteCustomerAction(customerId: string): Promise<Customer
   // depend on each other — fetch together. If the customer turns out not to
   // exist, the count was cheap and harmlessly returned zero.
   const [customer, licenseCount] = await Promise.all([
-    getCustomer(orgId, customerId),
+    getCustomer(orgId, customerId, deptScope),
     countCustomerLicenses(orgId, customerId),
   ]);
   if (!customer) return { error: "That customer doesn't belong to your organization." };

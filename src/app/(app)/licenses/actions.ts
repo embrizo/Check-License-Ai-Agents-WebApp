@@ -101,8 +101,9 @@ export async function draftRenewalAction(
 ): Promise<DraftRenewalState> {
   let orgId: string;
   let session: Awaited<ReturnType<typeof requireOrg>>["session"];
+  let deptScope: Awaited<ReturnType<typeof requireOrg>>["deptScope"];
   try {
-    ({ orgId, session } = await requireOrg());
+    ({ orgId, session, deptScope } = await requireOrg());
   } catch (err) {
     const message = guardErrorMessage(err);
     if (message) return { ok: false, error: message };
@@ -114,7 +115,7 @@ export async function draftRenewalAction(
     return { ok: false, error: "AI features are disabled for this organization." };
   }
 
-  const license = await getLicenseWithCustomer(orgId, licenseId);
+  const license = await getLicenseWithCustomer(orgId, licenseId, deptScope);
   if (!license) return { ok: false, error: "License not found." };
 
   const timezone = settings?.timezone ?? "Asia/Bangkok";
@@ -151,8 +152,9 @@ export async function sendRenewalEmailAction(
 ): Promise<SendRenewalState> {
   let orgId: string;
   let session: Awaited<ReturnType<typeof requireOrg>>["session"];
+  let deptScope: Awaited<ReturnType<typeof requireOrg>>["deptScope"];
   try {
-    ({ orgId, session } = await requireOrg({ write: true }));
+    ({ orgId, session, deptScope } = await requireOrg({ write: true }));
   } catch (err) {
     const message = guardErrorMessage(err);
     if (message) return { ok: false, error: message };
@@ -171,7 +173,7 @@ export async function sendRenewalEmailAction(
     return { ok: false, error: `Not a valid email address: ${badAddresses.join(", ")}` };
   }
 
-  const license = await getLicenseWithCustomer(orgId, licenseId);
+  const license = await getLicenseWithCustomer(orgId, licenseId, deptScope);
   if (!license) return { ok: false, error: "License not found." };
 
   const user = await getUserById(session.user.id);

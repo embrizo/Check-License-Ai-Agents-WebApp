@@ -2,21 +2,29 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { licenseFiles } from "@/db/schema";
+import { departmentCondition, type DepartmentScope } from "@/server/auth/departmentScope";
 
 type ParseSource = (typeof licenseFiles.parseSource.enumValues)[number];
 
-export async function listLicenseFiles(orgId: string, customerId?: string) {
+// `scope` required on reads (see customers.ts) — filters the denormalized
+// licenseFiles.department_id.
+export async function listLicenseFiles(orgId: string, scope: DepartmentScope, customerId?: string) {
   const db = getDb();
-  const where = customerId
-    ? and(eq(licenseFiles.organizationId, orgId), eq(licenseFiles.customerId, customerId))
-    : eq(licenseFiles.organizationId, orgId);
-  return db.select().from(licenseFiles).where(where);
+  return db.select().from(licenseFiles).where(and(
+    eq(licenseFiles.organizationId, orgId),
+    customerId ? eq(licenseFiles.customerId, customerId) : undefined,
+    departmentCondition(licenseFiles.departmentId, scope),
+  ));
 }
 
-export async function getLicenseFile(orgId: string, licenseFileId: string) {
+export async function getLicenseFile(orgId: string, licenseFileId: string, scope: DepartmentScope) {
   const db = getDb();
   const [row] = await db.select().from(licenseFiles)
-    .where(and(eq(licenseFiles.id, licenseFileId), eq(licenseFiles.organizationId, orgId)));
+    .where(and(
+      eq(licenseFiles.id, licenseFileId),
+      eq(licenseFiles.organizationId, orgId),
+      departmentCondition(licenseFiles.departmentId, scope),
+    ));
   return row ?? null;
 }
 
