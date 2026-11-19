@@ -3,11 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { requireOrg } from "@/server/auth/guards";
 import { guardErrorMessage } from "@/server/auth/actionError";
-import { createCustomer, getCustomer, countCustomerLicenses, deleteCustomerIfNoLicenses } from "@/server/data/customers";
+import { createCustomer, getCustomer, countCustomerLicenses, deleteCustomerIfNoLicenses, setCustomerDepartment } from "@/server/data/customers";
+import { getDepartment } from "@/server/data/departments";
 import { createContact, deleteContact } from "@/server/data/contacts";
 import { recordAuditLog } from "@/server/data/admin/auditLog";
 import { isUniqueViolation } from "@/server/data/errors";
 import { isValidEmail } from "@/server/domain/email";
+import { resolveWriteDepartment } from "@/server/auth/departmentScope";
 
 export type CustomerFormState = { error?: string; success?: boolean } | undefined;
 
@@ -68,8 +70,9 @@ export async function createCustomerAction(
   formData: FormData,
 ): Promise<CustomerFormState> {
   let orgId: string;
+  let deptScope: Awaited<ReturnType<typeof requireOrg>>["deptScope"];
   try {
-    ({ orgId } = await requireOrg({ write: true }));
+    ({ orgId, deptScope } = await requireOrg({ write: true }));
   } catch (err) {
     const message = guardErrorMessage(err);
     if (message) return { error: message };
@@ -79,12 +82,48 @@ export async function createCustomerAction(
   const name = (formData.get("name") as string | null)?.trim();
   if (!name) return { error: "Enter a customer name." };
 
-  const created = await createCustomer(orgId, name);
+  // A scoped member files the customer into their own department; an org_admin
+  // may pick one via the form. Validate any chosen id belongs to this org.
+  const requestedDept = (formData.get("departmentId") as string | null)?.trim() || null;
+  const departmentId = resolveWriteDepartment(deptScope, requestedDept);
+  if (departmentId && !(await getDepartment(orgId, departmentId))) {
+    return { error: "That department doesn't belong to your organization." };
+  }
+
+  const created = await createCustomer(orgId, name, departmentId);
   if (!created) return { error: `You already have a customer called "${name}".` };
 
   revalidatePath("/customers");
   revalidatePath("/uploads");
   return { success: true };
+}
+
+/**
+ * Reassign a customer to a department (or clear it), cascading to its licenses
+ * and files (see setCustomerDepartment). org_admin only — a scoped member can't
+ * move data between departments. Returns void; runAction surfaces any throw.
+ */
+export async function setCustomerDepartmentAction(customerId: string, departmentId: string | null) {
+  const { orgId, session } = await requireOrg({ role: "org_admin", write: true });
+
+  if (departmentId && !(await getDepartment(orgId, departmentId))) {
+    throw new Error("That department doesn't belong to your organization.");
+  }
+
+  const updated = await setCustomerDepartment(orgId, customerId, departmentId);
+  if (!updated) throw new Error("That customer doesn't belong to your organization.");
+
+  await recordAuditLog({
+    organizationId: orgId,
+    userId: session.user.id,
+    action: "customer.department_change",
+    targetType: "customer",
+    targetId: customerId,
+    metadata: { departmentId },
+  });
+  revalidatePath("/customers");
+  revalidatePath("/licenses");
+  revalidatePath("/dashboard");
 }
 
 export async function addContactAction(

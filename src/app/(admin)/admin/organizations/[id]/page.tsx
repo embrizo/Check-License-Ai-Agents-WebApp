@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation";
 import { getOrganization } from "@/server/data/organizations";
 import { listUsers } from "@/server/data/users";
+import { listDepartments } from "@/server/data/departments";
 import { getActiveSubscription } from "@/server/data/subscriptions";
 import { listAuditLogForOrg } from "@/server/data/admin/auditLog";
 import { UserManagement } from "./user-management";
+import { DepartmentManagement } from "./department-management";
 import { SubscriptionEditor } from "./subscription-editor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -16,11 +18,14 @@ export default async function OrganizationDetailPage({
   const org = await getOrganization(id);
   if (!org) notFound();
 
-  const [users, subscription, auditEntries] = await Promise.all([
+  const [users, departments, subscription, auditEntries] = await Promise.all([
     listUsers(id),
+    listDepartments(id),
     getActiveSubscription(id),
     listAuditLogForOrg(id, 50),
   ]);
+
+  const deptOptions = departments.map((dpt) => ({ id: dpt.id, name: dpt.name }));
 
   return (
     <div className="space-y-6">
@@ -28,9 +33,12 @@ export default async function OrganizationDetailPage({
 
       <SubscriptionEditor orgId={id} subscription={subscription} />
 
+      <DepartmentManagement orgId={id} departments={deptOptions} />
+
       <UserManagement
         orgId={id}
-        users={users.map((u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, isActive: u.isActive }))}
+        departments={deptOptions}
+        users={users.map((u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, isActive: u.isActive, departmentId: u.departmentId }))}
       />
 
       <Card>

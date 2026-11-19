@@ -8,7 +8,7 @@ import {
   type CertificateInput,
 } from "@/server/data/certificates";
 import { getCustomer } from "@/server/data/customers";
-import type { DepartmentScope } from "@/server/auth/departmentScope";
+import { resolveWriteDepartment, type DepartmentScope } from "@/server/auth/departmentScope";
 import { getOrgSettings } from "@/server/data/organizationSettings";
 import { recordAuditLog } from "@/server/data/admin/auditLog";
 import { isValidDateString, type CertCategory } from "@/server/domain/certificates";
@@ -102,7 +102,7 @@ export async function suggestCertificateFromPdf(formData: FormData): Promise<Cer
  * returns a user-facing error string. Pure server-side gate: the client form's
  * presets and auto-fill are convenience only — nothing here trusts them.
  */
-async function parseForm(orgId: string, deptScope: DepartmentScope, formData: FormData): Promise<CertificateInput | { error: string }> {
+async function parseForm(orgId: string, deptScope: DepartmentScope, formData: FormData): Promise<(CertificateInput & { departmentId: string | null }) | { error: string }> {
   const category = formData.get("category") as string | null;
   if (category !== "personal" && category !== "inspection") {
     return { error: "Choose a certificate category." };
@@ -128,10 +128,17 @@ async function parseForm(orgId: string, deptScope: DepartmentScope, formData: Fo
   }
 
   let customerId = (formData.get("customerId") as string | null)?.trim() || null;
+  // A cert inherits the department of the site/customer it's filed under; a
+  // customer-less cert goes to the creator's own department (a scoped member) or
+  // stays unfiled (an org_admin).
+  let departmentId: string | null;
   if (customerId) {
     const customer = await getCustomer(orgId, customerId, deptScope);
     if (!customer) return { error: "That site/customer doesn't belong to your organization." };
     customerId = customer.id;
+    departmentId = customer.departmentId;
+  } else {
+    departmentId = resolveWriteDepartment(deptScope, null);
   }
 
   const certNumber = (formData.get("certNumber") as string | null)?.trim() || null;
@@ -147,6 +154,7 @@ async function parseForm(orgId: string, deptScope: DepartmentScope, formData: Fo
     renewalMonths,
     notes,
     customerId,
+    departmentId,
   };
 }
 
@@ -168,7 +176,7 @@ export async function createCertificateAction(
   const parsed = await parseForm(orgId, deptScope, formData);
   if ("error" in parsed) return { error: parsed.error };
 
-  const created = await createCertificate(orgId, session.user.id, parsed);
+  const created = await createCertificate(orgId, session.user.id, parsed.departmentId, parsed);
 
   await recordAuditLog({
     organizationId: orgId,
@@ -203,7 +211,7 @@ export async function updateCertificateAction(
   const parsed = await parseForm(orgId, deptScope, formData);
   if ("error" in parsed) return { error: parsed.error };
 
-  const updated = await updateCertificate(orgId, certId, parsed);
+  const updated = await updateCertificate(orgId, certId, parsed.departmentId, parsed);
   if (!updated) return { error: "That certificate doesn't belong to your organization." };
 
   await recordAuditLog({

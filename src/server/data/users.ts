@@ -35,6 +35,7 @@ export async function getUser(orgId: string, userId: string) {
 
 export async function createUser(orgId: string, input: {
   email: string; name?: string; role: UserRole; passwordHash: string;
+  departmentId?: string | null;
 }) {
   const db = getDb();
   const [row] = await db.insert(users).values({
@@ -43,8 +44,16 @@ export async function createUser(orgId: string, input: {
     name: input.name,
     role: input.role,
     passwordHash: input.passwordHash,
+    departmentId: input.departmentId ?? null,
   }).returning();
   return row;
+}
+
+/** Assign (or clear, with null) a user's department. Tenant-scoped. */
+export async function setUserDepartment(orgId: string, userId: string, departmentId: string | null) {
+  const db = getDb();
+  await db.update(users).set({ departmentId })
+    .where(and(eq(users.id, userId), eq(users.organizationId, orgId)));
 }
 
 export async function setUserActive(orgId: string, userId: string, isActive: boolean) {

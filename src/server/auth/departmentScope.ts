@@ -39,3 +39,15 @@ export function departmentCondition(column: AnyPgColumn, scope: DepartmentScope)
   if ("all" in scope) return undefined;
   return scope.departmentId === null ? isNull(column) : eq(column, scope.departmentId);
 }
+
+/**
+ * Which department new data should be filed under. A scoped member can only ever
+ * write into their OWN department, so any `requested` value they somehow sent is
+ * ignored — they can't file data into a department they can't see. Only a caller
+ * who sees every department (org_admin/super_admin) may choose, via `requested`
+ * (which the caller must still validate belongs to the org). This is the write
+ * mirror of departmentCondition's read filter.
+ */
+export function resolveWriteDepartment(scope: DepartmentScope, requested: string | null): string | null {
+  return "all" in scope ? requested : scope.departmentId;
+}

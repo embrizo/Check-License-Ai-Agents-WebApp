@@ -4,7 +4,8 @@ import { useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { runAction } from "@/lib/run-action";
 import {
-  createUserAction, toggleUserActiveAction, changeUserRoleAction, reissueSetupLinkAction, type CreateUserState,
+  createUserAction, toggleUserActiveAction, changeUserRoleAction, reissueSetupLinkAction,
+  setUserDepartmentAction, type CreateUserState,
 } from "./actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,9 +20,12 @@ import {
 } from "@/components/ui/table";
 
 type Role = "member" | "org_admin" | "super_admin";
-interface UserRow { id: string; email: string; name: string | null; role: Role; isActive: boolean }
+interface DeptOption { id: string; name: string }
+interface UserRow { id: string; email: string; name: string | null; role: Role; isActive: boolean; departmentId: string | null }
 
-export function UserManagement({ orgId, users }: { orgId: string; users: UserRow[] }) {
+const NO_DEPT = "none";
+
+export function UserManagement({ orgId, users, departments }: { orgId: string; users: UserRow[]; departments: DeptOption[] }) {
   const boundCreate = createUserAction.bind(null, orgId);
   const [state, action, pending] = useActionState<CreateUserState, FormData>(boundCreate, undefined);
   const [pendingRow, startRowTransition] = useTransition();
@@ -57,6 +61,13 @@ export function UserManagement({ orgId, users }: { orgId: string; users: UserRow
     });
   }
 
+  function changeDept(userId: string, value: string) {
+    const departmentId = value === NO_DEPT ? null : value;
+    startRowTransition(async () => {
+      await runAction(() => setUserDepartmentAction(orgId, userId, departmentId), "Department updated.");
+    });
+  }
+
   return (
     <Card>
       <CardHeader><CardTitle className="text-base">Users ({users.length})</CardTitle></CardHeader>
@@ -68,6 +79,7 @@ export function UserManagement({ orgId, users }: { orgId: string; users: UserRow
                 <TableHead>Email</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Role</TableHead>
+                <TableHead>Department</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead />
               </TableRow>
@@ -88,6 +100,17 @@ export function UserManagement({ orgId, users }: { orgId: string; users: UserRow
                     </Select>
                   </TableCell>
                   <TableCell>
+                    <Select value={u.departmentId ?? NO_DEPT} onValueChange={(v) => v && changeDept(u.id, v)}>
+                      <SelectTrigger className="w-36" disabled={pendingRow || departments.length === 0}><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NO_DEPT}>— none —</SelectItem>
+                        {departments.map((dpt) => (
+                          <SelectItem key={dpt.id} value={dpt.id}>{dpt.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell>
                     <Badge variant={u.isActive ? "default" : "secondary"}>{u.isActive ? "active" : "deactivated"}</Badge>
                   </TableCell>
                   <TableCell>
@@ -103,7 +126,7 @@ export function UserManagement({ orgId, users }: { orgId: string; users: UserRow
                 </TableRow>
               ))}
               {users.length === 0 && (
-                <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">No users yet.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">No users yet.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -124,6 +147,13 @@ export function UserManagement({ orgId, users }: { orgId: string; users: UserRow
               <option value="member">member</option>
               <option value="org_admin">org_admin</option>
               <option value="super_admin">super_admin</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="departmentId">Department</Label>
+            <select id="departmentId" name="departmentId" defaultValue="" className="h-9 rounded-md border bg-transparent px-3 text-sm">
+              <option value="">— none —</option>
+              {departments.map((dpt) => <option key={dpt.id} value={dpt.id}>{dpt.name}</option>)}
             </select>
           </div>
           <Button type="submit" disabled={pending}>{pending ? "Creating…" : "Create user"}</Button>

@@ -44,12 +44,14 @@ export async function getCertificate(orgId: string, certId: string, scope: Depar
 export async function createCertificate(
   orgId: string,
   createdBy: string,
+  departmentId: string | null,
   input: CertificateInput,
 ) {
   const db = getDb();
   const [row] = await db.insert(certificates).values({
     organizationId: orgId,
     customerId: input.customerId,
+    departmentId,
     category: input.category,
     certType: input.certType,
     holderName: input.holderName,
@@ -70,12 +72,14 @@ export async function createCertificate(
 export async function updateCertificate(
   orgId: string,
   certId: string,
+  departmentId: string | null,
   input: CertificateInput,
 ) {
   const db = getDb();
   const [row] = await db.update(certificates)
     .set({
       customerId: input.customerId,
+      departmentId,
       category: input.category,
       certType: input.certType,
       holderName: input.holderName,

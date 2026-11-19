@@ -6,7 +6,8 @@ import { z } from "zod";
 import { addMonths } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { requireOrgAccess } from "@/server/auth/guards";
-import { createUser, getUser, setUserActive, setUserRole } from "@/server/data/users";
+import { createUser, getUser, setUserActive, setUserRole, setUserDepartment } from "@/server/data/users";
+import { createDepartment, getDepartment } from "@/server/data/departments";
 import { createSetupToken } from "@/server/data/passwordSetupTokens";
 import {
   applyDemoPlan, extendSubscription, getActiveSubscription, setSubscriptionStatus,
@@ -39,6 +40,13 @@ export async function createUserAction(orgId: string, _prevState: CreateUserStat
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
 
+  // Optional department. Validate it belongs to this org (never trust the
+  // posted id) — a member confined to it will only ever see its data.
+  const departmentId = (formData.get("departmentId") as string | null)?.trim() || null;
+  if (departmentId && !(await getDepartment(orgId, departmentId))) {
+    return { error: "That department doesn't belong to this organization." };
+  }
+
   const lockedPasswordHash = await bcrypt.hash(randomBytes(32).toString("hex"), 12);
 
   // `uq_users_email` is global, not per-org (one address = one login), so this
@@ -51,6 +59,7 @@ export async function createUserAction(orgId: string, _prevState: CreateUserStat
       name: parsed.data.name,
       role: parsed.data.role,
       passwordHash: lockedPasswordHash,
+      departmentId,
     });
   } catch (err) {
     if (isUniqueViolation(err, "uq_users_email")) {
@@ -127,6 +136,51 @@ export async function changeUserRoleAction(orgId: string, userId: string, role: 
     targetType: "user",
     targetId: userId,
     metadata: { role },
+  });
+  revalidatePath(`/admin/organizations/${orgId}`);
+}
+
+const DepartmentInput = z.object({ name: z.string().trim().min(1).max(100) });
+
+export type CreateDepartmentState = { error?: string } | undefined;
+
+export async function createDepartmentAction(orgId: string, _prevState: CreateDepartmentState, formData: FormData): Promise<CreateDepartmentState> {
+  const { session } = await requireOrgAccess({ role: "super_admin" });
+
+  const parsed = DepartmentInput.safeParse({ name: formData.get("name") });
+  if (!parsed.success) return { error: "Enter a department name." };
+
+  const dept = await createDepartment(orgId, parsed.data.name);
+  if (!dept) return { error: `A department named "${parsed.data.name}" already exists in this organization.` };
+
+  await recordAuditLog({
+    organizationId: orgId,
+    userId: session.user.id,
+    action: "department.create",
+    targetType: "department",
+    targetId: dept.id,
+    metadata: { name: dept.name },
+  });
+  revalidatePath(`/admin/organizations/${orgId}`);
+}
+
+/** Assign a user to a department, or clear it (departmentId null). The posted id
+ *  is validated against this org before it's trusted. */
+export async function setUserDepartmentAction(orgId: string, userId: string, departmentId: string | null) {
+  const { session } = await requireOrgAccess({ role: "super_admin" });
+
+  if (departmentId && !(await getDepartment(orgId, departmentId))) {
+    throw new Error("That department doesn't belong to this organization.");
+  }
+
+  await setUserDepartment(orgId, userId, departmentId);
+  await recordAuditLog({
+    organizationId: orgId,
+    userId: session.user.id,
+    action: "user.department_change",
+    targetType: "user",
+    targetId: userId,
+    metadata: { departmentId },
   });
   revalidatePath(`/admin/organizations/${orgId}`);
 }

@@ -119,6 +119,7 @@ export async function uploadLicenseFiles(_prevState: UploadState, formData: Form
     const { file: fileRow } = await upsertLicenseFile({
       organizationId: orgId,
       customerId,
+      departmentId: customer.departmentId,   // inherit the customer's department
       filename: file.name,
       content,
       contentHash,
@@ -136,6 +137,7 @@ export async function uploadLicenseFiles(_prevState: UploadState, formData: Form
     const { upserted, staleDeleted } = await upsertLicensesForFile({
       organizationId: orgId,
       customerId,
+      departmentId: customer.departmentId,
       licenseFileId: fileRow.id,
       parsed,
     });
@@ -174,6 +176,7 @@ export async function tryAiParseAction(licenseFileId: string): Promise<AiParseSt
     const { upserted, skippedConfirmed } = await upsertAiLicensesForFile({
       organizationId: orgId,
       customerId: file.customerId,
+      departmentId: file.departmentId,   // inherit from the stored file
       licenseFileId: file.id,
       parsed: result.licenses,
     });

@@ -1,7 +1,7 @@
 import "server-only";
 import { and, count, eq, notExists } from "drizzle-orm";
 import { getDb } from "@/db";
-import { customers, licenses } from "@/db/schema";
+import { customers, licenses, licenseFiles } from "@/db/schema";
 import { departmentCondition, type DepartmentScope } from "@/server/auth/departmentScope";
 
 // `scope` is a required parameter on every member-facing read: it forces each
@@ -45,13 +45,36 @@ export async function getCustomer(orgId: string, customerId: string, scope: Depa
  * message. `onConflictDoNothing` also closes the check-then-insert race that a
  * pre-flight SELECT would leave open.
  */
-export async function createCustomer(orgId: string, name: string) {
+export async function createCustomer(orgId: string, name: string, departmentId: string | null = null) {
   const db = getDb();
   const [row] = await db.insert(customers)
-    .values({ organizationId: orgId, name })
+    .values({ organizationId: orgId, name, departmentId })
     .onConflictDoNothing({ target: [customers.organizationId, customers.name] })
     .returning();
   return row ?? null;
+}
+
+/**
+ * Move a customer to a department (or clear it with null), cascading the same
+ * department_id onto every license and license_file denormalized under it, so
+ * the access-control columns stay consistent (a member of the new department
+ * sees the customer's licenses; a member of the old one stops). Tenant-scoped:
+ * a customerId from another org updates nothing. Returns the updated customer,
+ * or null if it wasn't this org's.
+ */
+export async function setCustomerDepartment(orgId: string, customerId: string, departmentId: string | null) {
+  const db = getDb();
+  const [row] = await db.update(customers)
+    .set({ departmentId })
+    .where(and(eq(customers.id, customerId), eq(customers.organizationId, orgId)))
+    .returning();
+  if (!row) return null;
+
+  await db.update(licenses).set({ departmentId })
+    .where(and(eq(licenses.organizationId, orgId), eq(licenses.customerId, customerId)));
+  await db.update(licenseFiles).set({ departmentId })
+    .where(and(eq(licenseFiles.organizationId, orgId), eq(licenseFiles.customerId, customerId)));
+  return row;
 }
 
 /** How many licenses a customer still has — used to block its deletion and name the count. */

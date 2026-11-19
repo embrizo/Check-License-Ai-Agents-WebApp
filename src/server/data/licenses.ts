@@ -88,11 +88,13 @@ export async function listLicensesByCustomer(orgId: string, customerId: string, 
 export async function upsertLicensesForFile(input: {
   organizationId: string;
   customerId: string;
+  /** Inherited from the owning customer's department (denormalized access-control column). */
+  departmentId: string | null;
   licenseFileId: string;
   parsed: ParsedLicense[];
 }) {
   const db = getDb();
-  const { organizationId, customerId, licenseFileId, parsed } = input;
+  const { organizationId, customerId, departmentId, licenseFileId, parsed } = input;
 
   for (const lic of parsed) {
     // Extra identifiers with no dedicated column (the FlexNet parser populates
@@ -101,6 +103,7 @@ export async function upsertLicensesForFile(input: {
     await db.insert(licenses).values({
       organizationId,
       customerId,
+      departmentId,
       licenseFileId,
       productName: lic.productName,
       vendor: lic.vendor,
@@ -115,6 +118,7 @@ export async function upsertLicensesForFile(input: {
     }).onConflictDoUpdate({
       target: [licenses.licenseFileId, licenses.productName, licenses.licenseKey],
       set: {
+        departmentId,
         vendor: lic.vendor,
         soldTo: lic.soldTo,
         version: lic.version,
@@ -157,11 +161,13 @@ export async function upsertLicensesForFile(input: {
 export async function upsertAiLicensesForFile(input: {
   organizationId: string;
   customerId: string;
+  /** Inherited from the owning customer's department (denormalized access-control column). */
+  departmentId: string | null;
   licenseFileId: string;
   parsed: AiParsedLicense[];
 }) {
   const db = getDb();
-  const { organizationId, customerId, licenseFileId, parsed } = input;
+  const { organizationId, customerId, departmentId, licenseFileId, parsed } = input;
 
   let upserted = 0;
 
@@ -171,6 +177,7 @@ export async function upsertAiLicensesForFile(input: {
     const written = await db.insert(licenses).values({
       organizationId,
       customerId,
+      departmentId,
       licenseFileId,
       productName: lic.productName,
       vendor: lic.vendor ?? null,
@@ -187,6 +194,7 @@ export async function upsertAiLicensesForFile(input: {
       target: [licenses.licenseFileId, licenses.productName, licenses.licenseKey],
       setWhere: eq(licenses.reviewState, "pending_review"),
       set: {
+        departmentId,
         vendor: lic.vendor ?? null,
         licenseKey: lic.licenseKey ?? null,
         version: lic.version ?? null,

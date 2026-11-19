@@ -46,6 +46,8 @@ export async function getLicenseFileByName(orgId: string, customerId: string, fi
 export async function upsertLicenseFile(input: {
   organizationId: string;
   customerId: string;
+  /** Inherited from the owning customer's department — keeps the denormalized column in step. */
+  departmentId: string | null;
   filename: string;
   content: string;
   contentHash: string;
@@ -64,6 +66,7 @@ export async function upsertLicenseFile(input: {
         content: input.content,
         contentHash: input.contentHash,
         sizeBytes: input.sizeBytes,
+        departmentId: input.departmentId,
         parseError: input.parseError,
         uploadedBy: input.uploadedBy,
         uploadedAt: new Date(),
